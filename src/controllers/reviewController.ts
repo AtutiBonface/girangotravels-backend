@@ -23,6 +23,8 @@ const listReviewsSchema = z.object({
   params: z.object({}),
   query: z.object({
     status: z.enum(['pending', 'approved', 'rejected']).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
   }),
 });
 
@@ -95,14 +97,41 @@ async function listAllReviews(
   next: NextFunction
 ) {
   try {
-    const where = req.validated.query.status ? { status: req.validated.query.status } : {};
+    const { status, page, limit } = req.validated.query;
+    const where = status ? { status } : {};
+    const usePagination = page !== undefined || limit !== undefined;
+    const effectivePage = page ?? 1;
+    const effectiveLimit = limit ?? 20;
 
-    const reviews = await Review.findAll({
-      where,
-      order: [['createdAt', 'DESC']],
+    if (usePagination) {
+      const { rows, count } = await Review.findAndCountAll({
+        where,
+        order: [['createdAt', 'DESC']],
+        limit: effectiveLimit,
+        offset: (effectivePage - 1) * effectiveLimit,
+      });
+
+      return res.json({
+        reviews: rows,
+        meta: {
+          page: effectivePage,
+          limit: effectiveLimit,
+          total: count,
+          totalPages: Math.ceil(count / effectiveLimit),
+        },
+      });
+    }
+
+    const reviews = await Review.findAll({ where, order: [['createdAt', 'DESC']] });
+    return res.json({
+      reviews,
+      meta: {
+        page: 1,
+        limit: reviews.length || 1,
+        total: reviews.length,
+        totalPages: 1,
+      },
     });
-
-    return res.json({ reviews });
   } catch (error) {
     return next(error);
   }

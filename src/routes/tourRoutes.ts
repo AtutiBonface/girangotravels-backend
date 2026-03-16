@@ -7,6 +7,7 @@ const {
   createTourSchema,
   updateTourSchema,
   idSchema,
+  listToursSchema,
   listTours,
   getTourById,
   createTour,
@@ -15,7 +16,7 @@ const {
 
 const router: Router = express.Router();
 
-router.get('/', listTours);
+router.get('/', validate(listToursSchema), listTours);
 router.get('/:id', validate(idSchema), getTourById);
 router.post('/', requireAuth, requireRole('admin'), validate(createTourSchema), createTour);
 router.patch('/:id', requireAuth, requireRole('admin'), validate(updateTourSchema), updateTour);

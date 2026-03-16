@@ -5,6 +5,7 @@ const validate = require('../middleware/validate');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   createContactSchema,
+  listContactsSchema,
   updateContactStatusSchema,
   replyContactSchema,
   createContactMessage,
@@ -16,7 +17,7 @@ const {
 const router: Router = express.Router();
 
 router.post('/', validate(createContactSchema), createContactMessage);
-router.get('/', requireAuth, requireRole('admin'), listContactMessages);
+router.get('/', requireAuth, requireRole('admin'), validate(listContactsSchema), listContactMessages);
 router.patch('/:id/status', requireAuth, requireRole('admin'), validate(updateContactStatusSchema), updateContactStatus);
 router.post('/:id/reply', requireAuth, requireRole('admin'), validate(replyContactSchema), replyContact);
 

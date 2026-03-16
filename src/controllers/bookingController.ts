@@ -39,9 +39,20 @@ const updateBookingStatusSchema = z.object({
   query: z.object({}),
 });
 
+const listBookingsSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({
+    status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  }),
+});
+
 type CreateBookingInput = ZodInfer<typeof createBookingSchema>;
 type BookingIdInput = ZodInfer<typeof bookingIdSchema>;
 type UpdateBookingStatusInput = ZodInfer<typeof updateBookingStatusSchema>;
+type ListBookingsInput = ZodInfer<typeof listBookingsSchema>;
 
 async function createBooking(
   req: AuthenticatedValidatedRequest<CreateBookingInput['body'], CreateBookingInput['params'], CreateBookingInput['query']>,
@@ -125,20 +136,60 @@ async function listMyBookings(req: RequestWithUser, res: Response, next: NextFun
   }
 }
 
-async function listAllBookings(req: RequestWithUser, res: Response, next: NextFunction) {
+async function listAllBookings(
+  req: AuthenticatedValidatedRequest<ListBookingsInput['body'], ListBookingsInput['params'], ListBookingsInput['query']>,
+  res: Response,
+  next: NextFunction
+) {
   try {
     const where: Record<string, unknown> = {};
-    if (req.query.status) {
-      where.status = req.query.status;
+    const { status, page, limit } = req.validated.query;
+
+    if (status) {
+      where.status = status;
+    }
+
+    const include = [{ model: Tour }, { model: User, attributes: ['id', 'fullName', 'email', 'phoneNumber'] }];
+
+    const usePagination = page !== undefined || limit !== undefined;
+    const effectivePage = page ?? 1;
+    const effectiveLimit = limit ?? 20;
+
+    if (usePagination) {
+      const { rows, count } = await Booking.findAndCountAll({
+        where,
+        include,
+        order: [['createdAt', 'DESC']],
+        limit: effectiveLimit,
+        offset: (effectivePage - 1) * effectiveLimit,
+      });
+
+      return res.json({
+        bookings: rows,
+        meta: {
+          page: effectivePage,
+          limit: effectiveLimit,
+          total: count,
+          totalPages: Math.ceil(count / effectiveLimit),
+        },
+      });
     }
 
     const bookings = await Booking.findAll({
       where,
-      include: [{ model: Tour }, { model: User, attributes: ['id', 'fullName', 'email', 'phoneNumber'] }],
+      include,
       order: [['createdAt', 'DESC']],
     });
 
-    return res.json({ bookings });
+    return res.json({
+      bookings,
+      meta: {
+        page: 1,
+        limit: bookings.length || 1,
+        total: bookings.length,
+        totalPages: 1,
+      },
+    });
   } catch (error) {
     return next(error);
   }
@@ -223,6 +274,7 @@ async function updateBookingStatus(
 
 module.exports = {
   createBookingSchema,
+  listBookingsSchema,
   bookingIdSchema,
   updateBookingStatusSchema,
   createBooking,

@@ -49,21 +49,68 @@ const idSchema = z.object({
   query: z.object({}),
 });
 
+const listToursSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({
+    includeInactive: z.enum(['true', 'false']).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  }),
+});
+
 type CreateTourInput = ZodInfer<typeof createTourSchema>;
 type UpdateTourInput = ZodInfer<typeof updateTourSchema>;
 type IdInput = ZodInfer<typeof idSchema>;
+type ListToursInput = ZodInfer<typeof listToursSchema>;
 
-async function listTours(req: RequestWithUser, res: Response, next: NextFunction) {
+async function listTours(
+  req: RequestWithValidated<ListToursInput['body'], ListToursInput['params'], ListToursInput['query']> & RequestWithUser,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const includeInactive = req.query.includeInactive === 'true' && req.user?.role === 'admin';
+    const { includeInactive: includeInactiveQuery, page, limit } = req.validated.query;
+    const includeInactive = includeInactiveQuery === 'true' && req.user?.role === 'admin';
     const where = includeInactive ? {} : { isActive: true };
+
+    const usePagination = page !== undefined || limit !== undefined;
+    const effectivePage = page ?? 1;
+    const effectiveLimit = limit ?? 20;
+
+    if (usePagination) {
+      const { rows, count } = await Tour.findAndCountAll({
+        where,
+        order: [['createdAt', 'DESC']],
+        limit: effectiveLimit,
+        offset: (effectivePage - 1) * effectiveLimit,
+      });
+
+      return res.json({
+        tours: rows,
+        meta: {
+          page: effectivePage,
+          limit: effectiveLimit,
+          total: count,
+          totalPages: Math.ceil(count / effectiveLimit),
+        },
+      });
+    }
 
     const tours = await Tour.findAll({
       where,
       order: [['createdAt', 'DESC']],
     });
 
-    return res.json({ tours });
+    return res.json({
+      tours,
+      meta: {
+        page: 1,
+        limit: tours.length || 1,
+        total: tours.length,
+        totalPages: 1,
+      },
+    });
   } catch (error) {
     return next(error);
   }
@@ -184,6 +231,7 @@ module.exports = {
   createTourSchema,
   updateTourSchema,
   idSchema,
+  listToursSchema,
   listTours,
   getTourById,
   createTour,

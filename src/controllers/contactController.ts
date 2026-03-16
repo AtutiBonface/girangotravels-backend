@@ -35,9 +35,19 @@ const replyContactSchema = z.object({
   query: z.object({}),
 });
 
+const listContactsSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  }),
+});
+
 type CreateContactInput = ZodInfer<typeof createContactSchema>;
 type UpdateContactStatusInput = ZodInfer<typeof updateContactStatusSchema>;
 type ReplyContactInput = ZodInfer<typeof replyContactSchema>;
+type ListContactsInput = ZodInfer<typeof listContactsSchema>;
 
 async function createContactMessage(
   req: RequestWithValidated<CreateContactInput['body'], CreateContactInput['params'], CreateContactInput['query']>,
@@ -70,13 +80,48 @@ async function createContactMessage(
   }
 }
 
-async function listContactMessages(req: RequestWithValidated, res: Response, next: NextFunction) {
+async function listContactMessages(
+  req: RequestWithValidated<ListContactsInput['body'], ListContactsInput['params'], ListContactsInput['query']>,
+  res: Response,
+  next: NextFunction
+) {
   try {
+    const { page, limit } = req.validated.query;
+    const usePagination = page !== undefined || limit !== undefined;
+    const effectivePage = page ?? 1;
+    const effectiveLimit = limit ?? 20;
+
+    if (usePagination) {
+      const { rows, count } = await ContactMessage.findAndCountAll({
+        order: [['createdAt', 'DESC']],
+        limit: effectiveLimit,
+        offset: (effectivePage - 1) * effectiveLimit,
+      });
+
+      return res.json({
+        contacts: rows,
+        meta: {
+          page: effectivePage,
+          limit: effectiveLimit,
+          total: count,
+          totalPages: Math.ceil(count / effectiveLimit),
+        },
+      });
+    }
+
     const contacts = await ContactMessage.findAll({
       order: [['createdAt', 'DESC']],
     });
 
-    return res.json({ contacts });
+    return res.json({
+      contacts,
+      meta: {
+        page: 1,
+        limit: contacts.length || 1,
+        total: contacts.length,
+        totalPages: 1,
+      },
+    });
   } catch (error) {
     return next(error);
   }
@@ -192,6 +237,7 @@ module.exports = {
   createContactSchema,
   updateContactStatusSchema,
   replyContactSchema,
+  listContactsSchema,
   createContactMessage,
   listContactMessages,
   updateContactStatus,
