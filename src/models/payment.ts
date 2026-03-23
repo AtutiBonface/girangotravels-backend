@@ -3,7 +3,7 @@ const { DataTypes, Model } = require('sequelize');
 class Payment extends Model {
   declare id: string;
   declare bookingId: string;
-  declare provider: 'mpesa' | 'visa' | 'mastercard';
+  declare provider: 'mpesa' | 'visa' | 'mastercard' | 'paystack';
   declare amount: string;
   declare currency: string;
   declare status: 'initiated' | 'successful' | 'failed';
@@ -23,7 +23,7 @@ function initPayment(sequelize: any) {
         primaryKey: true,
       },
       provider: {
-        type: DataTypes.ENUM('mpesa', 'visa', 'mastercard'),
+        type: DataTypes.ENUM('mpesa', 'visa', 'mastercard', 'paystack'),
         allowNull: false,
       },
       amount: {

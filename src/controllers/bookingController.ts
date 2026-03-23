@@ -1,9 +1,10 @@
 import type { NextFunction, Response } from 'express';
-import type { AuthenticatedValidatedRequest, RequestWithUser } from '../types/http';
+import type { AuthenticatedValidatedRequest, RequestWithUser, RequestWithValidated } from '../types/http';
 import type { infer as ZodInfer } from 'zod';
 
 const { z } = require('zod') as typeof import('zod');
 const { customAlphabet } = require('nanoid');
+const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
 const { Booking, Tour, Payment, User } = require('../models');
 const HttpError = require('../utils/httpError');
 const { notifyNewBooking } = require('../services/notificationService');
@@ -13,6 +14,21 @@ const reservationCodeGenerator = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ1234567
 
 const createBookingSchema = z.object({
   body: z.object({
+    tourId: z.string().uuid(),
+    travelDate: z.string().date(),
+    travelers: z.number().int().positive(),
+    specialRequests: z.string().optional(),
+  }),
+  params: z.object({}),
+  query: z.object({}),
+});
+
+const createPublicBookingSchema = z.object({
+  body: z.object({
+    fullName: z.string().min(2),
+    email: z.string().email(),
+    phoneNumber: z.string().min(6).optional(),
+    country: z.string().min(2).optional(),
     tourId: z.string().uuid(),
     travelDate: z.string().date(),
     travelers: z.number().int().positive(),
@@ -50,9 +66,37 @@ const listBookingsSchema = z.object({
 });
 
 type CreateBookingInput = ZodInfer<typeof createBookingSchema>;
+type CreatePublicBookingInput = ZodInfer<typeof createPublicBookingSchema>;
 type BookingIdInput = ZodInfer<typeof bookingIdSchema>;
 type UpdateBookingStatusInput = ZodInfer<typeof updateBookingStatusSchema>;
 type ListBookingsInput = ZodInfer<typeof listBookingsSchema>;
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+async function ensureCustomerUser(input: {
+  fullName: string;
+  email: string;
+  phoneNumber?: string;
+  country?: string;
+}) {
+  const email = normalizeEmail(input.email);
+  const existing = await User.findOne({ where: { email } });
+  if (existing) {
+    return existing;
+  }
+
+  const randomPasswordHash = await bcrypt.hash(`gt-public-${Date.now()}-${Math.random()}`, 10);
+  return User.create({
+    fullName: input.fullName,
+    email,
+    phoneNumber: input.phoneNumber,
+    country: input.country,
+    passwordHash: randomPasswordHash,
+    role: 'customer',
+  });
+}
 
 async function createBooking(
   req: AuthenticatedValidatedRequest<CreateBookingInput['body'], CreateBookingInput['params'], CreateBookingInput['query']>,
@@ -97,6 +141,79 @@ async function createBooking(
         actor: req.user,
         details: {
           reservationCode: booking.reservationCode,
+          tourId,
+          tourTitle: tour.title,
+          travelDate,
+          travelers,
+          totalAmount: booking.totalAmount,
+          currency: booking.currency,
+          status: booking.status,
+          paymentStatus: booking.paymentStatus,
+        },
+      },
+      req
+    );
+
+    return res.status(201).json({
+      message: 'Booking created',
+      booking,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function createPublicBooking(
+  req: RequestWithValidated<
+    CreatePublicBookingInput['body'],
+    CreatePublicBookingInput['params'],
+    CreatePublicBookingInput['query']
+  >,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { fullName, email, phoneNumber, country, tourId, travelDate, travelers, specialRequests } = req.validated.body;
+
+    const tour = await Tour.findOne({ where: { id: tourId, isActive: true } });
+    if (!tour) {
+      throw new HttpError(404, 'Tour not found');
+    }
+
+    const customer = await ensureCustomerUser({ fullName, email, phoneNumber, country });
+    const totalAmount = Number(tour.price) * travelers;
+
+    const booking = await Booking.create({
+      userId: customer.id,
+      tourId,
+      travelDate,
+      travelers,
+      specialRequests,
+      reservationCode: `GT-${reservationCodeGenerator()}`,
+      totalAmount,
+      currency: tour.currency,
+      status: 'pending',
+      paymentStatus: 'unpaid',
+    });
+
+    await notifyNewBooking({
+      customerName: customer.fullName,
+      customerPhone: customer.phoneNumber,
+      reservationCode: booking.reservationCode,
+      tourTitle: tour.title,
+    });
+
+    await logAuditEvent(
+      {
+        action: 'booking.created',
+        entityType: 'booking',
+        entityId: booking.id,
+        actor: null,
+        details: {
+          source: 'public-site',
+          reservationCode: booking.reservationCode,
+          customerEmail: customer.email,
+          customerName: customer.fullName,
           tourId,
           tourTitle: tour.title,
           travelDate,
@@ -274,10 +391,12 @@ async function updateBookingStatus(
 
 module.exports = {
   createBookingSchema,
+  createPublicBookingSchema,
   listBookingsSchema,
   bookingIdSchema,
   updateBookingStatusSchema,
   createBooking,
+  createPublicBooking,
   listMyBookings,
   listAllBookings,
   getBookingById,

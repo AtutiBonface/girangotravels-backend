@@ -5,10 +5,12 @@ const validate = require('../middleware/validate');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   createBookingSchema,
+  createPublicBookingSchema,
   listBookingsSchema,
   bookingIdSchema,
   updateBookingStatusSchema,
   createBooking,
+  createPublicBooking,
   listMyBookings,
   listAllBookings,
   getBookingById,
@@ -17,6 +19,7 @@ const {
 
 const router: Router = express.Router();
 
+router.post('/public', validate(createPublicBookingSchema), createPublicBooking);
 router.post('/', requireAuth, validate(createBookingSchema), createBooking);
 router.get('/mine', requireAuth, listMyBookings);
 router.get('/', requireAuth, requireRole('admin'), validate(listBookingsSchema), listAllBookings);
