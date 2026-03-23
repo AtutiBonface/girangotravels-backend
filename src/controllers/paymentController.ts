@@ -47,7 +47,7 @@ const initializePaystackPaymentSchema = z.object({
     customerEmail: z.string().email(),
     amount: z.number().positive().optional(),
     currency: z.string().min(3).max(3).optional(),
-    preferredChannel: z.enum(['card', 'mobile_money', 'bank_transfer']).optional(),
+    preferredChannel: z.enum(['card', 'mobile_money', 'bank_transfer', 'apple_pay']).optional(),
     metadata: z.record(z.any()).optional(),
   }),
   params: z.object({}),
