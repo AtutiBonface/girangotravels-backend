@@ -17,7 +17,7 @@ const createTourSchema = z.object({
     description: z.string().min(10),
     includedServices: z.array(z.string()).default([]),
     excludedServices: z.array(z.string()).default([]),
-    images: z.array(z.string().url()).default([]),
+    images: z.array(z.string()).default([]),
     isActive: z.boolean().optional(),
   }),
   params: z.object({}),
@@ -35,7 +35,7 @@ const updateTourSchema = z.object({
       description: z.string().min(10).optional(),
       includedServices: z.array(z.string()).optional(),
       excludedServices: z.array(z.string()).optional(),
-      images: z.array(z.string().url()).optional(),
+      images: z.array(z.string()).optional(),
       isActive: z.boolean().optional(),
     })
     .refine((data) => Object.keys(data).length > 0, 'Provide at least one field to update'),

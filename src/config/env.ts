@@ -10,10 +10,26 @@ interface EnvConfig {
   jwtExpiresIn: string;
   paystackSecretKey: string;
   paystackCallbackUrl: string;
+  paystackCurrency: string;
+  paystackCurrencyFallbacks: string[];
   pingAfricaBaseUrl: string;
   pingAfricaApiKey: string;
   pingAfricaSenderId: string;
   adminAlertPhone: string;
+}
+
+function parseCurrencyList(rawValue: string | undefined) {
+  if (!rawValue) return [] as string[];
+
+  const unique = new Set<string>();
+  for (const part of rawValue.split(',')) {
+    const currency = part.trim().toUpperCase();
+    if (/^[A-Z]{3}$/.test(currency)) {
+      unique.add(currency);
+    }
+  }
+
+  return [...unique];
 }
 
 const defaultLocalDatabaseUrl =
@@ -38,6 +54,8 @@ const envConfig: EnvConfig = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   paystackSecretKey: process.env.PAYSTACK_SECRET_KEY || '',
   paystackCallbackUrl: process.env.PAYSTACK_CALLBACK_URL || '',
+  paystackCurrency: (process.env.PAYSTACK_CURRENCY || '').trim().toUpperCase(),
+  paystackCurrencyFallbacks: parseCurrencyList(process.env.PAYSTACK_CURRENCY_FALLBACKS),
   pingAfricaBaseUrl: process.env.PING_AFRICA_BASE_URL || '',
   pingAfricaApiKey: process.env.PING_AFRICA_API_KEY || '',
   pingAfricaSenderId: process.env.PING_AFRICA_SENDER_ID || '',

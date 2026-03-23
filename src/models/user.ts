@@ -8,7 +8,6 @@ class User extends Model {
   declare phoneNumber: string | null;
   declare country: string | null;
   declare role: 'customer' | 'admin';
-  declare department: string | null;
   declare createdAt: Date;
   declare updatedAt: Date;
 }
@@ -42,10 +41,6 @@ function initUser(sequelize: any) {
         allowNull: true,
       },
       country: {
-        type: DataTypes.STRING,
-        allowNull: true,
-      },
-      department: {
         type: DataTypes.STRING,
         allowNull: true,
       },

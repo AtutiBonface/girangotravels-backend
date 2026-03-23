@@ -5,9 +5,12 @@ import type { infer as ZodInfer } from 'zod';
 const { z } = require('zod') as typeof import('zod');
 const { Booking, Payment, Tour, User } = require('../models');
 const HttpError = require('../utils/httpError');
-const { paystackSecretKey, paystackCallbackUrl } = require('../config/env');
+const { paystackSecretKey, paystackCallbackUrl, paystackCurrency, paystackCurrencyFallbacks } = require('../config/env');
 const { notifyPaymentSuccess } = require('../services/notificationService');
 const { logAuditEvent } = require('../services/auditService');
+
+const FX_API_PRIMARY_URL = 'https://open.er-api.com/v6/latest';
+const FX_API_FALLBACK_URL = 'https://api.frankfurter.app';
 
 const createPaymentSchema = z.object({
   body: z.object({
@@ -44,6 +47,7 @@ const initializePaystackPaymentSchema = z.object({
     customerEmail: z.string().email(),
     amount: z.number().positive().optional(),
     currency: z.string().min(3).max(3).optional(),
+    preferredChannel: z.enum(['card', 'mobile_money', 'bank_transfer']).optional(),
     metadata: z.record(z.any()).optional(),
   }),
   params: z.object({}),
@@ -75,6 +79,200 @@ function normalizeEmail(email: string) {
 
 function toNumber(value: string | number) {
   return Number(value);
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function toPositiveNumber(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function buildCurrencyCandidates(preferred: string, requested: string | undefined, bookingCurrency: string) {
+  const values = [
+    preferred,
+    requested,
+    bookingCurrency,
+    ...(Array.isArray(paystackCurrencyFallbacks) ? paystackCurrencyFallbacks : []),
+    'NGN',
+    'USD',
+    'GHS',
+    'ZAR',
+  ];
+
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (/^[A-Z]{3}$/.test(normalized)) {
+      unique.add(normalized);
+    }
+  }
+
+  return [...unique];
+}
+
+async function fetchPaystackAvailableCurrencies() {
+  try {
+    const response = await fetch('https://api.paystack.co/balance', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${paystackSecretKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      return [] as string[];
+    }
+
+    const payload = await response.json().catch(() => null);
+    const rows = Array.isArray(payload?.data) ? (payload.data as Array<Record<string, unknown>>) : [];
+    const currencies = rows
+      .map((item: any) => String(item?.currency || '').trim().toUpperCase())
+      .filter((currency: string) => /^[A-Z]{3}$/.test(currency));
+
+    return [...new Set<string>(currencies)];
+  } catch {
+    return [] as string[];
+  }
+}
+
+function buildCurrencyCandidatesWithAvailability(
+  preferred: string,
+  requested: string | undefined,
+  bookingCurrency: string,
+  availableCurrencies: string[]
+) {
+  const values = [
+    preferred,
+    requested,
+    ...availableCurrencies,
+    bookingCurrency,
+    ...(Array.isArray(paystackCurrencyFallbacks) ? paystackCurrencyFallbacks : []),
+    'NGN',
+    'USD',
+    'GHS',
+    'ZAR',
+  ];
+
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (/^[A-Z]{3}$/.test(normalized)) {
+      unique.add(normalized);
+    }
+  }
+
+  return [...unique];
+}
+
+async function getFxRate(fromCurrency: string, toCurrency: string) {
+  if (fromCurrency === toCurrency) {
+    return 1;
+  }
+
+  const configuredRate = Number(
+    process.env[`FX_RATE_${fromCurrency}_${toCurrency}`] || process.env[`FX_RATE_${fromCurrency}${toCurrency}`] || ''
+  );
+  if (Number.isFinite(configuredRate) && configuredRate > 0) {
+    return configuredRate;
+  }
+
+  const fallbackMapRaw = process.env.FX_RATES_JSON;
+  if (fallbackMapRaw) {
+    try {
+      const parsed = JSON.parse(fallbackMapRaw) as Record<string, unknown>;
+      const mapped = Number(parsed[`${fromCurrency}_${toCurrency}`]);
+      if (Number.isFinite(mapped) && mapped > 0) {
+        return mapped;
+      }
+    } catch {
+      // Ignore invalid JSON and continue with live providers.
+    }
+  }
+
+  try {
+    const primaryResponse = await fetch(`${FX_API_PRIMARY_URL}/${encodeURIComponent(fromCurrency)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (primaryResponse.ok) {
+      const primaryPayload = await primaryResponse.json().catch(() => null);
+      const primaryRate = Number(primaryPayload?.rates?.[toCurrency]);
+      if (Number.isFinite(primaryRate) && primaryRate > 0) {
+        return primaryRate;
+      }
+    }
+  } catch {
+    // Continue to fallback provider.
+  }
+
+  try {
+    const fallbackResponse = await fetch(
+      `${FX_API_FALLBACK_URL}/latest?from=${encodeURIComponent(fromCurrency)}&to=${encodeURIComponent(toCurrency)}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (fallbackResponse.ok) {
+      const fallbackPayload = await fallbackResponse.json().catch(() => null);
+      const fallbackRate = Number(fallbackPayload?.rates?.[toCurrency]);
+      if (Number.isFinite(fallbackRate) && fallbackRate > 0) {
+        return fallbackRate;
+      }
+    }
+  } catch {
+    // No-op, final error below.
+  }
+
+  throw new HttpError(
+    502,
+    `Failed to fetch FX rate ${fromCurrency}->${toCurrency}. Set FX_RATE_${fromCurrency}_${toCurrency} in .env as fallback.`
+  );
+}
+
+async function convertCurrency(amount: number, fromCurrency: string, toCurrency: string) {
+  if (fromCurrency === toCurrency) {
+    return {
+      rate: 1,
+      convertedAmount: roundMoney(amount),
+    };
+  }
+
+  const rate = await getFxRate(fromCurrency, toCurrency);
+  return {
+    rate,
+    convertedAmount: roundMoney(amount * rate),
+  };
+}
+
+function getBookingCurrencyAmountFromPayment(payment: any, bookingCurrency: string) {
+  const paymentCurrency = String(payment.currency || '').toUpperCase();
+  if (paymentCurrency === bookingCurrency) {
+    return toNumber(payment.amount);
+  }
+
+  const conversion = payment.metadata?.conversion;
+  const sourceCurrency = String(conversion?.sourceCurrency || '').toUpperCase();
+  const sourceAmount = toPositiveNumber(conversion?.sourceAmount);
+
+  if (sourceCurrency === bookingCurrency && sourceAmount !== null) {
+    return sourceAmount;
+  }
+
+  return 0;
 }
 
 function mapPaystackStatus(status: string): 'initiated' | 'successful' | 'failed' {
@@ -183,8 +381,12 @@ async function recalculateBookingPaymentStatus(bookingId: string) {
   const booking = await Booking.findByPk(bookingId);
   if (!booking) return;
 
+  const bookingCurrency = String(booking.currency || 'USD').toUpperCase();
   const successfulPayments = await Payment.findAll({ where: { bookingId, status: 'successful' } });
-  const paidAmount = successfulPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const paidAmount = successfulPayments.reduce(
+    (sum, payment) => sum + getBookingCurrencyAmountFromPayment(payment, bookingCurrency),
+    0
+  );
   const bookingTotal = Number(booking.totalAmount);
 
   let paymentStatus = 'unpaid';
@@ -265,7 +467,7 @@ async function initializePaystackPayment(
   try {
     ensurePaystackConfigured();
 
-    const { bookingId, customerEmail, amount, currency, metadata } = req.validated.body;
+    const { bookingId, customerEmail, amount, currency, preferredChannel, metadata } = req.validated.body;
     const booking = await Booking.findByPk(bookingId, {
       include: [{ model: User }],
     });
@@ -279,83 +481,159 @@ async function initializePaystackPayment(
       throw new HttpError(403, 'Customer email does not match booking owner');
     }
 
+    const bookingCurrency = String(booking.currency || 'USD').toUpperCase();
     const successfulPayments = await Payment.findAll({ where: { bookingId, status: 'successful' } });
-    const alreadyPaid = successfulPayments.reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const alreadyPaid = successfulPayments.reduce(
+      (sum, item) => sum + getBookingCurrencyAmountFromPayment(item, bookingCurrency),
+      0
+    );
     const bookingTotal = toNumber(booking.totalAmount);
     const outstanding = Math.max(bookingTotal - alreadyPaid, 0);
 
-    const amountToCharge = amount ?? outstanding;
-    if (amountToCharge <= 0) {
+    const amountInBookingCurrency = amount ?? outstanding;
+    if (amountInBookingCurrency <= 0) {
       throw new HttpError(400, 'Booking is already fully paid');
     }
 
-    if (amountToCharge > outstanding) {
+    if (amountInBookingCurrency > outstanding) {
       throw new HttpError(400, 'Amount exceeds outstanding balance');
     }
 
-    const normalizedCurrency = (currency || booking.currency || 'KES').toUpperCase();
-    const reference = `GTPSK-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const requestedCurrency = currency ? currency.toUpperCase() : undefined;
+    const preferredCurrency = (paystackCurrency || requestedCurrency || bookingCurrency).toUpperCase();
+    const availableCurrencies = await fetchPaystackAvailableCurrencies();
+    const currencyCandidates = buildCurrencyCandidatesWithAvailability(
+      preferredCurrency,
+      requestedCurrency,
+      bookingCurrency,
+      availableCurrencies
+    );
+
+    let chosenCurrency = '';
+    let chosenRate = 0;
+    let chosenConvertedAmount = 0;
+    let initializedData: any = null;
+    const initErrors: string[] = [];
+
+    for (const candidateCurrency of currencyCandidates) {
+      let conversionRate = 1;
+      let convertedAmount = 0;
+
+      try {
+        const conversion = await convertCurrency(amountInBookingCurrency, bookingCurrency, candidateCurrency);
+        conversionRate = conversion.rate;
+        convertedAmount = conversion.convertedAmount;
+      } catch (conversionError) {
+        initErrors.push(
+          `${candidateCurrency}: ${conversionError instanceof Error ? conversionError.message : 'FX conversion failed'}`
+        );
+        continue;
+      }
+
+      if (convertedAmount <= 0) {
+        initErrors.push(`${candidateCurrency}: Converted amount is invalid`);
+        continue;
+      }
+
+      const attemptReference = `GTPSK-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+      const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${paystackSecretKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: booking.User.email,
+          amount: Math.round(convertedAmount * 100),
+          reference: attemptReference,
+          currency: candidateCurrency,
+          channels: preferredChannel ? [preferredChannel] : undefined,
+          callback_url: paystackCallbackUrl || undefined,
+          metadata: {
+            bookingId,
+            reservationCode: booking.reservationCode,
+            bookingCurrency,
+            bookingAmount: roundMoney(amountInBookingCurrency),
+            chargedAmount: convertedAmount,
+            chargedCurrency: candidateCurrency,
+            fxRate: conversionRate,
+            preferredChannel: preferredChannel || null,
+            ...(metadata || {}),
+          },
+        }),
+      });
+
+      const initializedPayload = await paystackResponse.json().catch(() => null);
+      const message =
+        typeof initializedPayload?.message === 'string'
+          ? initializedPayload.message
+          : 'Failed to initialize Paystack transaction';
+
+      if (!paystackResponse.ok) {
+        initErrors.push(`${candidateCurrency}: ${message}`);
+
+        if (/currency not supported by merchant/i.test(message)) {
+          continue;
+        }
+
+        throw new HttpError(502, `${message} (currency ${candidateCurrency})`);
+      }
+
+      const data = initializedPayload?.data;
+      if (!data?.access_code || !data?.reference) {
+        initErrors.push(`${candidateCurrency}: Invalid Paystack initialize response`);
+        continue;
+      }
+
+      chosenCurrency = candidateCurrency;
+      chosenRate = conversionRate;
+      chosenConvertedAmount = convertedAmount;
+      initializedData = data;
+      break;
+    }
+
+    if (!initializedData || !chosenCurrency) {
+      const detail = initErrors.length > 0 ? ` Tried: ${initErrors.join(' | ')}` : '';
+      throw new HttpError(502, `Unable to initialize Paystack with available currencies.${detail}`);
+    }
 
     const payment = await Payment.create({
       bookingId,
       provider: 'paystack',
-      amount: amountToCharge,
-      currency: normalizedCurrency,
-      transactionRef: reference,
-      metadata: metadata || {},
-      status: 'initiated',
-    });
-
-    const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${paystackSecretKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: booking.User.email,
-        amount: Math.round(amountToCharge * 100),
-        reference,
-        currency: normalizedCurrency,
-        callback_url: paystackCallbackUrl || undefined,
-        metadata: {
-          bookingId,
-          paymentId: payment.id,
-          reservationCode: booking.reservationCode,
-          ...(metadata || {}),
-        },
-      }),
-    });
-
-    if (!paystackResponse.ok) {
-      throw new HttpError(502, 'Failed to initialize Paystack transaction');
-    }
-
-    const initializedPayload = await paystackResponse.json();
-    const data = initializedPayload?.data;
-    if (!data?.access_code || !data?.reference) {
-      throw new HttpError(502, 'Invalid Paystack initialize response');
-    }
-
-    await payment.update({
+      amount: chosenConvertedAmount,
+      currency: chosenCurrency,
+      transactionRef: initializedData.reference,
       metadata: {
-        ...(payment.metadata || {}),
+        ...(metadata || {}),
+        conversion: {
+          provider: 'live-fx',
+          sourceAmount: roundMoney(amountInBookingCurrency),
+          sourceCurrency: bookingCurrency,
+          targetAmount: chosenConvertedAmount,
+          targetCurrency: chosenCurrency,
+          rate: chosenRate,
+          convertedAt: new Date().toISOString(),
+        },
         paystack: {
           initializedAt: new Date().toISOString(),
-          accessCode: data.access_code,
-          authorizationUrl: data.authorization_url,
-          reference: data.reference,
+          accessCode: initializedData.access_code,
+          authorizationUrl: initializedData.authorization_url,
+          reference: initializedData.reference,
+          preferredChannel: preferredChannel || null,
+          availableCurrencies,
+          attemptedCurrencies: currencyCandidates,
         },
       },
-      transactionRef: data.reference,
+      status: 'initiated',
     });
 
     return res.status(201).json({
       message: 'Paystack payment initialized',
       payment,
       paystack: {
-        accessCode: data.access_code,
-        reference: data.reference,
+        accessCode: initializedData.access_code,
+        reference: initializedData.reference,
       },
     });
   } catch (error) {

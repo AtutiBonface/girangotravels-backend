@@ -18,12 +18,17 @@ const storage = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     cb(null, UPLOAD_DIR);
   },
-  filename: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+  filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
     const extension = path.extname(file.originalname);
     const baseName = path.basename(file.originalname, extension);
     const safeName = sanitizeFilename(baseName).slice(0, 50) || 'upload';
+    
+    // Get tour name from form data if provided
+    const tourName = (req.body?.tourName as string) || '';
+    const tourPrefix = tourName ? sanitizeFilename(tourName).slice(0, 30) : 'tour';
+    
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    cb(null, `${safeName}-${unique}${extension.toLowerCase()}`);
+    cb(null, `${tourPrefix}-${safeName}-${unique}${extension.toLowerCase()}`);
   },
 });
 
