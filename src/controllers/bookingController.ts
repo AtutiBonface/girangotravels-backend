@@ -298,7 +298,11 @@ async function listAllBookings(
       where.status = status;
     }
 
-    const include = [{ model: Tour }, { model: User, attributes: ['id', 'fullName', 'email', 'phoneNumber'] }];
+    const include = [
+      { model: Tour },
+      { model: User, attributes: ['id', 'fullName', 'email', 'phoneNumber', 'country'] },
+      { model: Payment, required: false },
+    ];
 
     const usePagination = page !== undefined || limit !== undefined;
     const effectivePage = page ?? 1;
