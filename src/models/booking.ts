@@ -8,7 +8,7 @@ class Booking extends Model {
   declare travelDate: string;
   declare travelers: number;
   declare specialRequests: string | null;
-  declare status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  declare status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'resolved';
   declare paymentStatus: 'unpaid' | 'partial' | 'paid';
   declare totalAmount: string;
   declare currency: string;
@@ -45,7 +45,7 @@ function initBooking(sequelize: any) {
         allowNull: true,
       },
       status: {
-        type: DataTypes.ENUM('pending', 'confirmed', 'cancelled', 'completed'),
+        type: DataTypes.ENUM('pending', 'confirmed', 'cancelled', 'completed', 'resolved'),
         allowNull: false,
         defaultValue: 'pending',
       },

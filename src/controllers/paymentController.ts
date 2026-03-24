@@ -366,6 +366,7 @@ async function synchronizePaymentWithPaystack(payment: any) {
 
     if (paymentWithBooking?.Booking?.User && paymentWithBooking?.Booking?.Tour) {
       await notifyPaymentSuccess({
+        customerEmail: paymentWithBooking.Booking.User.email,
         customerPhone: paymentWithBooking.Booking.User.phoneNumber,
         tourTitle: paymentWithBooking.Booking.Tour.title,
         amount: paymentWithBooking.amount,
@@ -717,6 +718,7 @@ async function updatePaymentStatus(
 
     if (status === 'successful') {
       await notifyPaymentSuccess({
+        customerEmail: payment.Booking.User.email,
         customerPhone: payment.Booking.User.phoneNumber,
         tourTitle: payment.Booking.Tour.title,
         amount: payment.amount,

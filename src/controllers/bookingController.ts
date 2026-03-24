@@ -7,7 +7,7 @@ const { customAlphabet } = require('nanoid');
 const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
 const { Booking, Tour, Payment, User } = require('../models');
 const HttpError = require('../utils/httpError');
-const { notifyNewBooking, notifyPaymentPending } = require('../services/notificationService');
+const { notifyBookingStatusChanged, notifyNewBooking, notifyPaymentPending } = require('../services/notificationService');
 const { logAuditEvent } = require('../services/auditService');
 
 const reservationCodeGenerator = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ123456789', 8);
@@ -47,7 +47,7 @@ const bookingIdSchema = z.object({
 const updateBookingStatusSchema = z.object({
   body: z
     .object({
-      status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']).optional(),
+      status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'resolved']).optional(),
       paymentStatus: z.enum(['unpaid', 'partial', 'paid']).optional(),
     })
     .refine((data) => Object.keys(data).length > 0, 'Provide status or paymentStatus'),
@@ -59,7 +59,7 @@ const listBookingsSchema = z.object({
   body: z.object({}),
   params: z.object({}),
   query: z.object({
-    status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']).optional(),
+    status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'resolved']).optional(),
     page: z.coerce.number().int().min(1).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
   }),
@@ -128,6 +128,7 @@ async function createBooking(
 
     await notifyNewBooking({
       customerName: req.user.fullName,
+      customerEmail: req.user.email,
       customerPhone: req.user.phoneNumber,
       reservationCode: booking.reservationCode,
       tourTitle: tour.title,
@@ -214,6 +215,7 @@ async function createPublicBooking(
 
     await notifyNewBooking({
       customerName: customer.fullName,
+      customerEmail: customer.email,
       customerPhone: customer.phoneNumber,
       reservationCode: booking.reservationCode,
       tourTitle: tour.title,
@@ -387,7 +389,9 @@ async function updateBookingStatus(
 ) {
   try {
     const { id } = req.validated.params;
-    const booking = await Booking.findByPk(id);
+    const booking = await Booking.findByPk(id, {
+      include: [{ model: Tour }, { model: User }],
+    });
 
     if (!booking) {
       throw new HttpError(404, 'Booking not found');
@@ -399,6 +403,27 @@ async function updateBookingStatus(
     };
 
     await booking.update(req.validated.body);
+
+    let customerEmailNotification: {
+      attempted: boolean;
+      sent: boolean;
+      reason: string;
+      error?: string;
+      recipient?: string;
+      status?: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+    } | null = null;
+
+    const requestedStatus = req.validated.body.status;
+    if (requestedStatus && requestedStatus !== before.status) {
+      customerEmailNotification = await notifyBookingStatusChanged({
+        customerName: booking.User?.fullName ?? 'Customer',
+        customerEmail: booking.User?.email,
+        reservationCode: booking.reservationCode,
+        tourTitle: booking.Tour?.title ?? 'Your Tour',
+        status: requestedStatus,
+        travelDate: booking.travelDate,
+      });
+    }
 
     await logAuditEvent(
       {
@@ -419,7 +444,7 @@ async function updateBookingStatus(
       req
     );
 
-    return res.json({ message: 'Booking updated', booking });
+    return res.json({ message: 'Booking updated', booking, customerEmailNotification });
   } catch (error) {
     return next(error);
   }
