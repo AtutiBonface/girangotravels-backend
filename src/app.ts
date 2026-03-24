@@ -15,6 +15,7 @@ const reviewRoutes = require('./routes/reviewRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const notificationConfigRoutes = require('./routes/notificationConfigRoutes');
+const env = require('./config/env');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
@@ -24,7 +25,7 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/uploads', express.static(env.uploadDir || path.join(process.cwd(), 'uploads')));
 
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok' });

@@ -3,8 +3,9 @@ import multer from 'multer';
 
 const fs = require('node:fs');
 const path = require('node:path');
+const env = require('../config/env');
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+const UPLOAD_DIR = env.uploadDir || path.join(process.cwd(), 'uploads');
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
