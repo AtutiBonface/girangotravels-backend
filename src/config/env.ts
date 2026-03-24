@@ -15,7 +15,13 @@ interface EnvConfig {
   pingAfricaBaseUrl: string;
   pingAfricaApiKey: string;
   pingAfricaSenderId: string;
+  pingAfricaWhatsappInstanceName: string;
   adminAlertPhone: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPassword: string;
+  appUrl: string;
 }
 
 function parseCurrencyList(rawValue: string | undefined) {
@@ -59,7 +65,13 @@ const envConfig: EnvConfig = {
   pingAfricaBaseUrl: process.env.PING_AFRICA_BASE_URL || '',
   pingAfricaApiKey: process.env.PING_AFRICA_API_KEY || '',
   pingAfricaSenderId: process.env.PING_AFRICA_SENDER_ID || '',
+  pingAfricaWhatsappInstanceName: process.env.PING_AFRICA_WHATSAPP_INSTANCE_NAME || '',
   adminAlertPhone: process.env.ADMIN_ALERT_PHONE || '',
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: Number(process.env.SMTP_PORT || 587),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPassword: process.env.SMTP_PASSWORD || '',
+  appUrl: process.env.APP_URL || 'http://localhost:3000',
 };
 
 module.exports = envConfig;

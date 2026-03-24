@@ -7,7 +7,7 @@ const { customAlphabet } = require('nanoid');
 const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
 const { Booking, Tour, Payment, User } = require('../models');
 const HttpError = require('../utils/httpError');
-const { notifyNewBooking } = require('../services/notificationService');
+const { notifyNewBooking, notifyPaymentPending } = require('../services/notificationService');
 const { logAuditEvent } = require('../services/auditService');
 
 const reservationCodeGenerator = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ123456789', 8);
@@ -131,7 +131,23 @@ async function createBooking(
       customerPhone: req.user.phoneNumber,
       reservationCode: booking.reservationCode,
       tourTitle: tour.title,
+      totalAmount: booking.totalAmount,
+      currency: booking.currency,
+      travelDate: booking.travelDate,
+      travelers: booking.travelers,
     });
+
+    if (booking.paymentStatus !== 'paid') {
+      await notifyPaymentPending({
+        customerName: req.user.fullName,
+        customerPhone: req.user.phoneNumber,
+        reservationCode: booking.reservationCode,
+        tourTitle: tour.title,
+        totalAmount: booking.totalAmount,
+        currency: booking.currency,
+        daysSinceBooking: 0,
+      });
+    }
 
     await logAuditEvent(
       {
@@ -201,7 +217,23 @@ async function createPublicBooking(
       customerPhone: customer.phoneNumber,
       reservationCode: booking.reservationCode,
       tourTitle: tour.title,
+      totalAmount: booking.totalAmount,
+      currency: booking.currency,
+      travelDate: booking.travelDate,
+      travelers: booking.travelers,
     });
+
+    if (booking.paymentStatus !== 'paid') {
+      await notifyPaymentPending({
+        customerName: customer.fullName,
+        customerPhone: customer.phoneNumber,
+        reservationCode: booking.reservationCode,
+        tourTitle: tour.title,
+        totalAmount: booking.totalAmount,
+        currency: booking.currency,
+        daysSinceBooking: 0,
+      });
+    }
 
     await logAuditEvent(
       {

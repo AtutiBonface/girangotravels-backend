@@ -14,6 +14,7 @@ const contactRoutes = require('./routes/contactRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const notificationConfigRoutes = require('./routes/notificationConfigRoutes');
 
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
@@ -37,6 +38,7 @@ app.use('/api/contacts', contactRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/notification-config', notificationConfigRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

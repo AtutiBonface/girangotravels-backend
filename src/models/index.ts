@@ -6,6 +6,7 @@ const { Payment, initPayment } = require('./payment');
 const { ContactMessage, initContactMessage } = require('./contactMessage');
 const { Review, initReview } = require('./review');
 const { AuditLog, initAuditLog } = require('./auditLog');
+const { NotificationConfig, initNotificationConfig } = require('./notificationConfig');
 
 initUser(sequelize);
 initTour(sequelize);
@@ -14,6 +15,7 @@ initPayment(sequelize);
 initContactMessage(sequelize);
 initReview(sequelize);
 initAuditLog(sequelize);
+initNotificationConfig(sequelize);
 
 User.hasMany(Booking, { foreignKey: 'userId' });
 Booking.belongsTo(User, { foreignKey: 'userId' });
@@ -36,4 +38,5 @@ module.exports = {
   ContactMessage,
   Review,
   AuditLog,
+  NotificationConfig,
 };

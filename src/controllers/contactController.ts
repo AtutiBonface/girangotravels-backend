@@ -5,7 +5,7 @@ import type { infer as ZodInfer } from 'zod';
 const { z } = require('zod') as typeof import('zod');
 const { ContactMessage } = require('../models');
 const HttpError = require('../utils/httpError');
-const { sendAdminReplyNotification } = require('../services/notificationService');
+const { sendAdminReplyNotification, notifyContactSubmitted } = require('../services/notificationService');
 const { logAuditEvent } = require('../services/auditService');
 
 const createContactSchema = z.object({
@@ -56,6 +56,8 @@ async function createContactMessage(
 ) {
   try {
     const contact = await ContactMessage.create(req.validated.body);
+
+  await notifyContactSubmitted(contact);
 
     await logAuditEvent(
       {
@@ -221,6 +223,7 @@ async function replyContact(
       await sendAdminReplyNotification({
         name: contact.name,
         phone: contact.phone,
+        email: contact.email,
         replyMessage,
       });
     } catch (_notifyError) {
