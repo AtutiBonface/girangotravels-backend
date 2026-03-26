@@ -456,6 +456,7 @@ async function updateBookingStatus(
     const queuedTasks: string[] = [];
 
     if (requestedStatus && requestedStatus !== before.status) {
+      console.log(`[booking] Status change requested for ${booking.id}: ${before.status} -> ${requestedStatus}`);
       queueTask(`booking-status-email:${booking.id}:${requestedStatus}`, async () => {
         await notifyBookingStatusChanged({
           customerName: booking.User?.fullName ?? 'Customer',
@@ -467,6 +468,16 @@ async function updateBookingStatus(
         });
       });
       queuedTasks.push('booking-status-email');
+
+      if (requestedStatus === 'completed') {
+        if (!booking.User?.email || !booking.Tour?.id) {
+          console.warn(
+            `[booking] Review invite not queued for ${booking.id}: missing ${!booking.User?.email ? 'customer email' : ''}${
+              !booking.User?.email && !booking.Tour?.id ? ' and ' : ''
+            }${!booking.Tour?.id ? 'tour id' : ''}`
+          );
+        }
+      }
 
       if (requestedStatus === 'completed' && booking.User?.email && booking.Tour?.id) {
         console.log(`[booking] Queueing review invite for booking ${booking.id}`);
@@ -483,17 +494,24 @@ async function updateBookingStatus(
 
           if (invitationResult.created && invitationResult.reviewUrl) {
             console.log(`[task] Sending review invitation email for ${booking.User.email}`);
-            await notifyReviewInvitation({
-              customerName: booking.User.fullName ?? 'Customer',
-              customerEmail: booking.User.email,
-              reservationCode: booking.reservationCode,
-              tourTitle: booking.Tour?.title ?? 'Your Tour',
-              reviewUrl: invitationResult.reviewUrl,
-            });
+            try {
+              await notifyReviewInvitation({
+                customerName: booking.User.fullName ?? 'Customer',
+                customerEmail: booking.User.email,
+                reservationCode: booking.reservationCode,
+                tourTitle: booking.Tour?.title ?? 'Your Tour',
+                reviewUrl: invitationResult.reviewUrl,
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              console.error(`[task] Review invitation email failed but link is available for ${booking.reservationCode}: ${message}`);
+            }
           }
         });
         queuedTasks.push('booking-review-invite');
       }
+    } else if (requestedStatus && requestedStatus === before.status) {
+      console.log(`[booking] Status unchanged for ${booking.id}; no notifications queued (${requestedStatus})`);
     }
 
     await logAuditEvent(
