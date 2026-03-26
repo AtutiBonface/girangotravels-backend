@@ -78,6 +78,21 @@ type BookingIdInput = ZodInfer<typeof bookingIdSchema>;
 type UpdateBookingStatusInput = ZodInfer<typeof updateBookingStatusSchema>;
 type ListBookingsInput = ZodInfer<typeof listBookingsSchema>;
 
+type BookingLifecycleStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'resolved';
+
+const allowedStatusTransitions: Record<BookingLifecycleStatus, BookingLifecycleStatus[]> = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['completed', 'cancelled'],
+  cancelled: ['resolved'],
+  completed: ['resolved'],
+  resolved: [],
+};
+
+function canTransitionBookingStatus(current: BookingLifecycleStatus, next: BookingLifecycleStatus) {
+  if (current === next) return true;
+  return allowedStatusTransitions[current].includes(next);
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -428,11 +443,18 @@ async function updateBookingStatus(
       paymentStatus: booking.paymentStatus,
     };
 
+    const requestedStatus = req.validated.body.status;
+    if (requestedStatus && !canTransitionBookingStatus(before.status, requestedStatus)) {
+      throw new HttpError(
+        400,
+        `Invalid status transition from "${before.status}" to "${requestedStatus}"`
+      );
+    }
+
     await booking.update(req.validated.body);
 
     const queuedTasks: string[] = [];
 
-    const requestedStatus = req.validated.body.status;
     if (requestedStatus && requestedStatus !== before.status) {
       queueTask(`booking-status-email:${booking.id}:${requestedStatus}`, async () => {
         await notifyBookingStatusChanged({
