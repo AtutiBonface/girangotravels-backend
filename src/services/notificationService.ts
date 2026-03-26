@@ -18,10 +18,12 @@ let resolvedWhatsappInstanceName: string | null = null;
 
 function getEmailTransporter() {
   if (!emailTransporter && smtpHost && smtpUser && smtpPassword) {
+    const port = Number(smtpPort) || 587;
+
     emailTransporter = nodemailer.createTransport({
       host: smtpHost,
-      port: smtpPort || 587,
-      secure: smtpPort === 465,
+      port,
+      secure: port === 465,
       auth: {
         user: smtpUser,
         pass: smtpPassword,
