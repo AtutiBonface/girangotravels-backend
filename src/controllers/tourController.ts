@@ -73,6 +73,15 @@ type IdInput = ZodInfer<typeof idSchema>;
 type ListToursInput = ZodInfer<typeof listToursSchema>;
 type ListTopDestinationsInput = ZodInfer<typeof listTopDestinationsSchema>;
 
+function toSlug(text: string) {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-');
+}
+
 async function listTopDestinations(
   req: RequestWithValidated<
     ListTopDestinationsInput['body'],
@@ -100,6 +109,8 @@ async function listTopDestinations(
       tourCount: number;
       bookingCount: number;
       firstSeenIndex: number;
+      featuredTourSlug: string;
+      featuredTourBookingCount: number;
     }>();
 
     tours.forEach((tour: any, index: number) => {
@@ -110,6 +121,7 @@ async function listTopDestinations(
       const image = Array.isArray(tour.images) && tour.images[0] ? String(tour.images[0]) : '';
       const tagline = String(tour.description || '').slice(0, 140);
       const bookingCount = Array.isArray(tour.Bookings) ? tour.Bookings.length : 0;
+      const featuredTourSlug = toSlug(String(tour.title || destinationName));
 
       const current = grouped.get(key);
       if (!current) {
@@ -121,14 +133,23 @@ async function listTopDestinations(
           tourCount: 1,
           bookingCount,
           firstSeenIndex: index,
+          featuredTourSlug,
+          featuredTourBookingCount: bookingCount,
         });
         return;
       }
 
+      const nextFeaturedTourSlug =
+        bookingCount > current.featuredTourBookingCount ? featuredTourSlug : current.featuredTourSlug;
+      const nextFeaturedTourBookingCount = Math.max(current.featuredTourBookingCount, bookingCount);
+
       grouped.set(key, {
         ...current,
+        image: current.image || image,
         tourCount: current.tourCount + 1,
         bookingCount: current.bookingCount + bookingCount,
+        featuredTourSlug: nextFeaturedTourSlug,
+        featuredTourBookingCount: nextFeaturedTourBookingCount,
       });
     });
 
@@ -153,6 +174,7 @@ async function listTopDestinations(
         tagline: item.tagline,
         tourCount: item.tourCount,
         bookingCount: item.bookingCount,
+        tourSlug: item.featuredTourSlug,
       })),
     });
   } catch (error) {

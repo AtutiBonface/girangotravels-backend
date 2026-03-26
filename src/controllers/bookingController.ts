@@ -15,6 +15,7 @@ const {
 } = require('../services/notificationService');
 const { logAuditEvent } = require('../services/auditService');
 const { issueReviewInvitation } = require('../services/reviewInvitationService');
+const { queueTask } = require('../services/backgroundTaskQueue');
 
 const reservationCodeGenerator = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ123456789', 8);
 
@@ -429,66 +430,43 @@ async function updateBookingStatus(
 
     await booking.update(req.validated.body);
 
-    let customerEmailNotification: {
-      attempted: boolean;
-      sent: boolean;
-      reason: string;
-      error?: string;
-      recipient?: string;
-      status?: 'pending' | 'confirmed' | 'cancelled' | 'completed';
-    } | null = null;
-    let reviewInvitationNotification: {
-      created: boolean;
-      skippedReason: string | null;
-      reviewUrl: string | null;
-      email?: {
-        attempted: boolean;
-        sent: boolean;
-        reason: string;
-      };
-    } | null = null;
+    const queuedTasks: string[] = [];
 
     const requestedStatus = req.validated.body.status;
     if (requestedStatus && requestedStatus !== before.status) {
-      customerEmailNotification = await notifyBookingStatusChanged({
-        customerName: booking.User?.fullName ?? 'Customer',
-        customerEmail: booking.User?.email,
-        reservationCode: booking.reservationCode,
-        tourTitle: booking.Tour?.title ?? 'Your Tour',
-        status: requestedStatus,
-        travelDate: booking.travelDate,
+      queueTask(`booking-status-email:${booking.id}:${requestedStatus}`, async () => {
+        await notifyBookingStatusChanged({
+          customerName: booking.User?.fullName ?? 'Customer',
+          customerEmail: booking.User?.email,
+          reservationCode: booking.reservationCode,
+          tourTitle: booking.Tour?.title ?? 'Your Tour',
+          status: requestedStatus,
+          travelDate: booking.travelDate,
+        });
       });
+      queuedTasks.push('booking-status-email');
 
       if (requestedStatus === 'completed' && booking.User?.email && booking.Tour?.id) {
-        const invitationResult = await issueReviewInvitation({
-          bookingId: booking.id,
-          tourId: booking.Tour.id,
-          customerEmail: booking.User.email,
-          customerName: booking.User.fullName ?? 'Customer',
-          reservationCode: booking.reservationCode,
-        });
-
-        reviewInvitationNotification = {
-          created: invitationResult.created,
-          skippedReason: invitationResult.skippedReason,
-          reviewUrl: invitationResult.reviewUrl,
-        };
-
-        if (invitationResult.created && invitationResult.reviewUrl) {
-          const emailResult = await notifyReviewInvitation({
-            customerName: booking.User.fullName ?? 'Customer',
+        queueTask(`booking-review-invite:${booking.id}`, async () => {
+          const invitationResult = await issueReviewInvitation({
+            bookingId: booking.id,
+            tourId: booking.Tour.id,
             customerEmail: booking.User.email,
+            customerName: booking.User.fullName ?? 'Customer',
             reservationCode: booking.reservationCode,
-            tourTitle: booking.Tour?.title ?? 'Your Tour',
-            reviewUrl: invitationResult.reviewUrl,
           });
 
-          reviewInvitationNotification.email = {
-            attempted: emailResult.attempted,
-            sent: emailResult.sent,
-            reason: emailResult.reason,
-          };
-        }
+          if (invitationResult.created && invitationResult.reviewUrl) {
+            await notifyReviewInvitation({
+              customerName: booking.User.fullName ?? 'Customer',
+              customerEmail: booking.User.email,
+              reservationCode: booking.reservationCode,
+              tourTitle: booking.Tour?.title ?? 'Your Tour',
+              reviewUrl: invitationResult.reviewUrl,
+            });
+          }
+        });
+        queuedTasks.push('booking-review-invite');
       }
     }
 
@@ -514,8 +492,10 @@ async function updateBookingStatus(
     return res.json({
       message: 'Booking updated',
       booking,
-      customerEmailNotification,
-      reviewInvitationNotification,
+      notificationDispatch: {
+        queued: queuedTasks.length > 0,
+        tasks: queuedTasks,
+      },
     });
   } catch (error) {
     return next(error);
