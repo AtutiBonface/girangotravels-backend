@@ -10,7 +10,7 @@ if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(databaseUrl)) {
 const sequelizeOptions = {
   dialect: 'postgres',
   logging: env === 'development' ? console.log : false,
-  dialectOptions: env === 'production' ? { ssl: { require: true, rejectUnauthorized: false } } : {},
+  dialectOptions: {},
 };
 
 const sequelize = new Sequelize(databaseUrl, sequelizeOptions);

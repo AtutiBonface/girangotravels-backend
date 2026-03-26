@@ -7,7 +7,7 @@ async function startServer() {
     await sequelize.authenticate();
     await sequelize.sync({ alter: false });
 
-    app.listen(port, () => {
+    app.listen(port, '0.0.0.0', () => {
       console.log(`Backend listening on port ${port}`);
     });
   } catch (error: unknown) {
