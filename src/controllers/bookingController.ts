@@ -469,7 +469,9 @@ async function updateBookingStatus(
       queuedTasks.push('booking-status-email');
 
       if (requestedStatus === 'completed' && booking.User?.email && booking.Tour?.id) {
+        console.log(`[booking] Queueing review invite for booking ${booking.id}`);
         queueTask(`booking-review-invite:${booking.id}`, async () => {
+          console.log(`[task] Starting review invite task for booking ${booking.id}`);
           const invitationResult = await issueReviewInvitation({
             bookingId: booking.id,
             tourId: booking.Tour.id,
@@ -477,8 +479,10 @@ async function updateBookingStatus(
             customerName: booking.User.fullName ?? 'Customer',
             reservationCode: booking.reservationCode,
           });
+          console.log(`[task] Review invite result: created=${invitationResult.created}, skipped=${invitationResult.skippedReason ?? 'no'}`);
 
           if (invitationResult.created && invitationResult.reviewUrl) {
+            console.log(`[task] Sending review invitation email for ${booking.User.email}`);
             await notifyReviewInvitation({
               customerName: booking.User.fullName ?? 'Customer',
               customerEmail: booking.User.email,

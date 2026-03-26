@@ -5,7 +5,6 @@ import type { infer as ZodInfer } from 'zod';
 const { z } = require('zod') as typeof import('zod');
 const { Tour, Booking } = require('../models');
 const HttpError = require('../utils/httpError');
-const { logAuditEvent } = require('../services/auditService');
 
 const createTourSchema = z.object({
   body: z.object({
@@ -261,24 +260,6 @@ async function createTour(
   try {
     const tour = await Tour.create(req.validated.body);
 
-    await logAuditEvent(
-      {
-        action: 'tour.created',
-        entityType: 'tour',
-        entityId: tour.id,
-        actor: req.user,
-        details: {
-          title: tour.title,
-          destination: tour.destination,
-          duration: tour.duration,
-          price: tour.price,
-          currency: tour.currency,
-          isActive: tour.isActive,
-        },
-      },
-      req
-    );
-
     return res.status(201).json({ message: 'Tour created', tour });
   } catch (error) {
     return next(error);
@@ -312,32 +293,6 @@ async function updateTour(
     };
 
     await tour.update(req.validated.body);
-
-    await logAuditEvent(
-      {
-        action: 'tour.updated',
-        entityType: 'tour',
-        entityId: tour.id,
-        actor: req.user,
-        details: {
-          changes: req.validated.body,
-          before,
-          after: {
-            title: tour.title,
-            destination: tour.destination,
-            duration: tour.duration,
-            price: tour.price,
-            currency: tour.currency,
-            description: tour.description,
-            includedServices: tour.includedServices,
-            excludedServices: tour.excludedServices,
-            images: tour.images,
-            isActive: tour.isActive,
-          },
-        },
-      },
-      req
-    );
 
     return res.json({ message: 'Tour updated', tour });
   } catch (error) {
