@@ -3,9 +3,13 @@ import type { RequestWithValidated } from '../types/http';
 import type { infer as ZodInfer } from 'zod';
 
 const { z } = require('zod') as typeof import('zod');
-const { Review } = require('../models');
+const { Review, Tour, Booking } = require('../models');
 const HttpError = require('../utils/httpError');
 const { logAuditEvent } = require('../services/auditService');
+const {
+  validateReviewInvitationToken,
+  submitInvitationReview,
+} = require('../services/reviewInvitationService');
 
 const createReviewSchema = z.object({
   body: z.object({
@@ -36,9 +40,144 @@ const updateReviewStatusSchema = z.object({
   query: z.object({}),
 });
 
+const reviewInviteTokenSchema = z.object({
+  body: z.object({}),
+  params: z.object({ token: z.string().min(20) }),
+  query: z.object({}),
+});
+
+const submitReviewInviteSchema = z.object({
+  body: z.object({
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().min(5),
+  }),
+  params: z.object({ token: z.string().min(20) }),
+  query: z.object({}),
+});
+
 type CreateReviewInput = ZodInfer<typeof createReviewSchema>;
 type ListReviewsInput = ZodInfer<typeof listReviewsSchema>;
 type UpdateReviewStatusInput = ZodInfer<typeof updateReviewStatusSchema>;
+type ReviewInviteTokenInput = ZodInfer<typeof reviewInviteTokenSchema>;
+type SubmitReviewInviteInput = ZodInfer<typeof submitReviewInviteSchema>;
+
+async function getReviewInviteByToken(
+  req: RequestWithValidated<ReviewInviteTokenInput['body'], ReviewInviteTokenInput['params'], ReviewInviteTokenInput['query']>,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { token } = req.validated.params;
+    const validation = await validateReviewInvitationToken(token);
+
+    if (!validation.valid || !validation.invitation) {
+      throw new HttpError(404, 'Invalid or expired review link');
+    }
+
+    const booking = await Booking.findByPk(validation.invitation.bookingId, {
+      include: [{ model: Tour }],
+    });
+
+    return res.json({
+      invitation: {
+        bookingId: validation.invitation.bookingId,
+        customerName: validation.invitation.customerName,
+        customerEmail: validation.invitation.customerEmail,
+        expiresAt: validation.invitation.expiresAt,
+        reservationCode: booking?.reservationCode ?? null,
+        tour: booking?.Tour
+          ? {
+              id: booking.Tour.id,
+              title: booking.Tour.title,
+              destination: booking.Tour.destination,
+            }
+          : null,
+      },
+      alreadyReviewed: validation.reason === 'already-reviewed',
+      review: validation.review
+        ? {
+            id: validation.review.id,
+            rating: validation.review.rating,
+            comment: validation.review.comment,
+            status: validation.review.status,
+            createdAt: validation.review.createdAt,
+          }
+        : null,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function submitReviewByInvite(
+  req: RequestWithValidated<
+    SubmitReviewInviteInput['body'],
+    SubmitReviewInviteInput['params'],
+    SubmitReviewInviteInput['query']
+  >,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { token } = req.validated.params;
+    const result = await submitInvitationReview(token, req.validated.body);
+
+    if (!result.valid || !result.invitation) {
+      throw new HttpError(404, 'Invalid or expired review link');
+    }
+
+    if (result.reason === 'already-reviewed') {
+      return res.status(409).json({
+        message: 'This tour has already been reviewed',
+        alreadyReviewed: true,
+        review: result.review
+          ? {
+              id: result.review.id,
+              rating: result.review.rating,
+              comment: result.review.comment,
+              status: result.review.status,
+              createdAt: result.review.createdAt,
+            }
+          : null,
+      });
+    }
+
+    if (!result.review) {
+      throw new HttpError(500, 'Failed to submit review');
+    }
+
+    await logAuditEvent(
+      {
+        action: 'review.invite_submitted',
+        entityType: 'review',
+        entityId: result.review.id,
+        actor: null,
+        details: {
+          bookingId: result.invitation.bookingId,
+          tourId: result.invitation.tourId,
+          customerEmail: result.invitation.customerEmail,
+          rating: result.review.rating,
+          status: result.review.status,
+        },
+      },
+      req
+    );
+
+    return res.status(201).json({
+      message: 'Review submitted and pending approval',
+      alreadyReviewed: false,
+      review: {
+        id: result.review.id,
+        rating: result.review.rating,
+        comment: result.review.comment,
+        status: result.review.status,
+        createdAt: result.review.createdAt,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
 
 async function createReview(
   req: RequestWithValidated<CreateReviewInput['body'], CreateReviewInput['params'], CreateReviewInput['query']>,
@@ -192,8 +331,12 @@ module.exports = {
   createReviewSchema,
   listReviewsSchema,
   updateReviewStatusSchema,
+  reviewInviteTokenSchema,
+  submitReviewInviteSchema,
   createReview,
   listApprovedReviews,
   listAllReviews,
   updateReviewStatus,
+  getReviewInviteByToken,
+  submitReviewByInvite,
 };

@@ -7,8 +7,14 @@ const { customAlphabet } = require('nanoid');
 const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
 const { Booking, Tour, Payment, User } = require('../models');
 const HttpError = require('../utils/httpError');
-const { notifyBookingStatusChanged, notifyNewBooking, notifyPaymentPending } = require('../services/notificationService');
+const {
+  notifyBookingStatusChanged,
+  notifyNewBooking,
+  notifyPaymentPending,
+  notifyReviewInvitation,
+} = require('../services/notificationService');
 const { logAuditEvent } = require('../services/auditService');
+const { issueReviewInvitation } = require('../services/reviewInvitationService');
 
 const reservationCodeGenerator = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ123456789', 8);
 
@@ -75,6 +81,13 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function runDeferred(label: string, task: () => Promise<void>) {
+  void task().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`${label} failed:`, message);
+  });
+}
+
 async function ensureCustomerUser(input: {
   fullName: string;
   email: string;
@@ -126,50 +139,56 @@ async function createBooking(
       paymentStatus: 'unpaid',
     });
 
-    await notifyNewBooking({
-      customerName: req.user.fullName,
-      customerEmail: req.user.email,
-      customerPhone: req.user.phoneNumber,
-      reservationCode: booking.reservationCode,
-      tourTitle: tour.title,
-      totalAmount: booking.totalAmount,
-      currency: booking.currency,
-      travelDate: booking.travelDate,
-      travelers: booking.travelers,
-    });
-
-    if (booking.paymentStatus !== 'paid') {
-      await notifyPaymentPending({
+    runDeferred('notifyNewBooking', async () => {
+      await notifyNewBooking({
         customerName: req.user.fullName,
+        customerEmail: req.user.email,
         customerPhone: req.user.phoneNumber,
         reservationCode: booking.reservationCode,
         tourTitle: tour.title,
         totalAmount: booking.totalAmount,
         currency: booking.currency,
-        daysSinceBooking: 0,
+        travelDate: booking.travelDate,
+        travelers: booking.travelers,
+      });
+    });
+
+    if (booking.paymentStatus !== 'paid') {
+      runDeferred('notifyPaymentPending', async () => {
+        await notifyPaymentPending({
+          customerName: req.user.fullName,
+          customerPhone: req.user.phoneNumber,
+          reservationCode: booking.reservationCode,
+          tourTitle: tour.title,
+          totalAmount: booking.totalAmount,
+          currency: booking.currency,
+          daysSinceBooking: 0,
+        });
       });
     }
 
-    await logAuditEvent(
-      {
-        action: 'booking.created',
-        entityType: 'booking',
-        entityId: booking.id,
-        actor: req.user,
-        details: {
-          reservationCode: booking.reservationCode,
-          tourId,
-          tourTitle: tour.title,
-          travelDate,
-          travelers,
-          totalAmount: booking.totalAmount,
-          currency: booking.currency,
-          status: booking.status,
-          paymentStatus: booking.paymentStatus,
+    runDeferred('logAuditEvent', async () => {
+      await logAuditEvent(
+        {
+          action: 'booking.created',
+          entityType: 'booking',
+          entityId: booking.id,
+          actor: req.user,
+          details: {
+            reservationCode: booking.reservationCode,
+            tourId,
+            tourTitle: tour.title,
+            travelDate,
+            travelers,
+            totalAmount: booking.totalAmount,
+            currency: booking.currency,
+            status: booking.status,
+            paymentStatus: booking.paymentStatus,
+          },
         },
-      },
-      req
-    );
+        req
+      );
+    });
 
     return res.status(201).json({
       message: 'Booking created',
@@ -213,53 +232,59 @@ async function createPublicBooking(
       paymentStatus: 'unpaid',
     });
 
-    await notifyNewBooking({
-      customerName: customer.fullName,
-      customerEmail: customer.email,
-      customerPhone: customer.phoneNumber,
-      reservationCode: booking.reservationCode,
-      tourTitle: tour.title,
-      totalAmount: booking.totalAmount,
-      currency: booking.currency,
-      travelDate: booking.travelDate,
-      travelers: booking.travelers,
-    });
-
-    if (booking.paymentStatus !== 'paid') {
-      await notifyPaymentPending({
+    runDeferred('notifyNewBooking', async () => {
+      await notifyNewBooking({
         customerName: customer.fullName,
+        customerEmail: customer.email,
         customerPhone: customer.phoneNumber,
         reservationCode: booking.reservationCode,
         tourTitle: tour.title,
         totalAmount: booking.totalAmount,
         currency: booking.currency,
-        daysSinceBooking: 0,
+        travelDate: booking.travelDate,
+        travelers: booking.travelers,
+      });
+    });
+
+    if (booking.paymentStatus !== 'paid') {
+      runDeferred('notifyPaymentPending', async () => {
+        await notifyPaymentPending({
+          customerName: customer.fullName,
+          customerPhone: customer.phoneNumber,
+          reservationCode: booking.reservationCode,
+          tourTitle: tour.title,
+          totalAmount: booking.totalAmount,
+          currency: booking.currency,
+          daysSinceBooking: 0,
+        });
       });
     }
 
-    await logAuditEvent(
-      {
-        action: 'booking.created',
-        entityType: 'booking',
-        entityId: booking.id,
-        actor: null,
-        details: {
-          source: 'public-site',
-          reservationCode: booking.reservationCode,
-          customerEmail: customer.email,
-          customerName: customer.fullName,
-          tourId,
-          tourTitle: tour.title,
-          travelDate,
-          travelers,
-          totalAmount: booking.totalAmount,
-          currency: booking.currency,
-          status: booking.status,
-          paymentStatus: booking.paymentStatus,
+    runDeferred('logAuditEvent', async () => {
+      await logAuditEvent(
+        {
+          action: 'booking.created',
+          entityType: 'booking',
+          entityId: booking.id,
+          actor: null,
+          details: {
+            source: 'public-site',
+            reservationCode: booking.reservationCode,
+            customerEmail: customer.email,
+            customerName: customer.fullName,
+            tourId,
+            tourTitle: tour.title,
+            travelDate,
+            travelers,
+            totalAmount: booking.totalAmount,
+            currency: booking.currency,
+            status: booking.status,
+            paymentStatus: booking.paymentStatus,
+          },
         },
-      },
-      req
-    );
+        req
+      );
+    });
 
     return res.status(201).json({
       message: 'Booking created',
@@ -412,6 +437,16 @@ async function updateBookingStatus(
       recipient?: string;
       status?: 'pending' | 'confirmed' | 'cancelled' | 'completed';
     } | null = null;
+    let reviewInvitationNotification: {
+      created: boolean;
+      skippedReason: string | null;
+      reviewUrl: string | null;
+      email?: {
+        attempted: boolean;
+        sent: boolean;
+        reason: string;
+      };
+    } | null = null;
 
     const requestedStatus = req.validated.body.status;
     if (requestedStatus && requestedStatus !== before.status) {
@@ -423,6 +458,38 @@ async function updateBookingStatus(
         status: requestedStatus,
         travelDate: booking.travelDate,
       });
+
+      if (requestedStatus === 'completed' && booking.User?.email && booking.Tour?.id) {
+        const invitationResult = await issueReviewInvitation({
+          bookingId: booking.id,
+          tourId: booking.Tour.id,
+          customerEmail: booking.User.email,
+          customerName: booking.User.fullName ?? 'Customer',
+          reservationCode: booking.reservationCode,
+        });
+
+        reviewInvitationNotification = {
+          created: invitationResult.created,
+          skippedReason: invitationResult.skippedReason,
+          reviewUrl: invitationResult.reviewUrl,
+        };
+
+        if (invitationResult.created && invitationResult.reviewUrl) {
+          const emailResult = await notifyReviewInvitation({
+            customerName: booking.User.fullName ?? 'Customer',
+            customerEmail: booking.User.email,
+            reservationCode: booking.reservationCode,
+            tourTitle: booking.Tour?.title ?? 'Your Tour',
+            reviewUrl: invitationResult.reviewUrl,
+          });
+
+          reviewInvitationNotification.email = {
+            attempted: emailResult.attempted,
+            sent: emailResult.sent,
+            reason: emailResult.reason,
+          };
+        }
+      }
     }
 
     await logAuditEvent(
@@ -444,7 +511,12 @@ async function updateBookingStatus(
       req
     );
 
-    return res.json({ message: 'Booking updated', booking, customerEmailNotification });
+    return res.json({
+      message: 'Booking updated',
+      booking,
+      customerEmailNotification,
+      reviewInvitationNotification,
+    });
   } catch (error) {
     return next(error);
   }

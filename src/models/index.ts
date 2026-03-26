@@ -5,6 +5,7 @@ const { Booking, initBooking } = require('./booking');
 const { Payment, initPayment } = require('./payment');
 const { ContactMessage, initContactMessage } = require('./contactMessage');
 const { Review, initReview } = require('./review');
+const { ReviewInvitation, initReviewInvitation } = require('./reviewInvitation');
 const { AuditLog, initAuditLog } = require('./auditLog');
 const { NotificationConfig, initNotificationConfig } = require('./notificationConfig');
 
@@ -14,6 +15,7 @@ initBooking(sequelize);
 initPayment(sequelize);
 initContactMessage(sequelize);
 initReview(sequelize);
+initReviewInvitation(sequelize);
 initAuditLog(sequelize);
 initNotificationConfig(sequelize);
 
@@ -26,6 +28,12 @@ Booking.belongsTo(Tour, { foreignKey: 'tourId' });
 Booking.hasMany(Payment, { foreignKey: 'bookingId' });
 Payment.belongsTo(Booking, { foreignKey: 'bookingId' });
 
+Booking.hasMany(ReviewInvitation, { foreignKey: 'bookingId' });
+ReviewInvitation.belongsTo(Booking, { foreignKey: 'bookingId' });
+
+Tour.hasMany(ReviewInvitation, { foreignKey: 'tourId' });
+ReviewInvitation.belongsTo(Tour, { foreignKey: 'tourId' });
+
 User.hasMany(AuditLog, { foreignKey: 'actorUserId', as: 'auditLogs' });
 AuditLog.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor' });
 
@@ -37,6 +45,7 @@ module.exports = {
   Payment,
   ContactMessage,
   Review,
+  ReviewInvitation,
   AuditLog,
   NotificationConfig,
 };

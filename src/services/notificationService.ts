@@ -526,6 +526,54 @@ interface AdminReplyNotificationPayload {
   replyMessage: string;
 }
 
+interface ReviewInvitationNotificationPayload {
+  customerName: string;
+  customerEmail?: string | null;
+  reservationCode: string;
+  tourTitle: string;
+  reviewUrl: string;
+}
+
+async function notifyReviewInvitation({
+  customerName,
+  customerEmail,
+  reservationCode,
+  tourTitle,
+  reviewUrl,
+}: ReviewInvitationNotificationPayload) {
+  if (!customerEmail?.trim()) {
+    return {
+      attempted: false,
+      sent: false,
+      reason: 'missing-customer-email',
+    };
+  }
+
+  const customerEmailHtml = renderEmailTemplate({
+    preheader: `Share your experience for ${reservationCode}`,
+    heading: 'How was your trip?',
+    intro: `Hello ${customerName}, thank you for traveling with Girango Travels.`,
+    contentHtml: `
+      <p><strong>Reservation Code:</strong> ${reservationCode}</p>
+      <p><strong>Tour:</strong> ${tourTitle}</p>
+      <p>We would love your feedback. Your review helps other travelers and helps us improve.</p>
+      <p>This review link is unique to your completed trip.</p>
+    `,
+    ctaLabel: 'Leave a Review',
+    ctaUrl: reviewUrl,
+  });
+
+  const result = await sendEmail(customerEmail, `Please review your trip: ${reservationCode}`, customerEmailHtml);
+
+  return {
+    attempted: true,
+    sent: result.sent,
+    reason: result.reason,
+    error: result.error,
+    recipient: customerEmail,
+  };
+}
+
 async function sendAdminReplyNotification({ name, phone, email, replyMessage }: AdminReplyNotificationPayload) {
   const smsmessage = `Hello ${name}, the Girango Travels team has replied to your enquiry: "${replyMessage}"`;
 
@@ -611,5 +659,6 @@ module.exports = {
   notifyPaymentPending,
   sendAdminReplyNotification,
   notifyContactSubmitted,
+  notifyReviewInvitation,
   getNotificationConfig,
 };

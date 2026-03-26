@@ -3,7 +3,7 @@ import type { RequestWithUser, RequestWithValidated } from '../types/http';
 import type { infer as ZodInfer } from 'zod';
 
 const { z } = require('zod') as typeof import('zod');
-const { Tour } = require('../models');
+const { Tour, Booking } = require('../models');
 const HttpError = require('../utils/httpError');
 const { logAuditEvent } = require('../services/auditService');
 
@@ -59,10 +59,106 @@ const listToursSchema = z.object({
   }),
 });
 
+const listTopDestinationsSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(10).optional(),
+  }),
+});
+
 type CreateTourInput = ZodInfer<typeof createTourSchema>;
 type UpdateTourInput = ZodInfer<typeof updateTourSchema>;
 type IdInput = ZodInfer<typeof idSchema>;
 type ListToursInput = ZodInfer<typeof listToursSchema>;
+type ListTopDestinationsInput = ZodInfer<typeof listTopDestinationsSchema>;
+
+async function listTopDestinations(
+  req: RequestWithValidated<
+    ListTopDestinationsInput['body'],
+    ListTopDestinationsInput['params'],
+    ListTopDestinationsInput['query']
+  >,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const requestedLimit = req.validated.query.limit ?? 3;
+    const effectiveLimit = Math.min(requestedLimit, 3);
+
+    const tours = await Tour.findAll({
+      where: { isActive: true },
+      include: [{ model: Booking, attributes: ['id'], required: false }],
+      order: [['createdAt', 'ASC']],
+    });
+
+    const grouped = new Map<string, {
+      key: string;
+      name: string;
+      image: string;
+      tagline: string;
+      tourCount: number;
+      bookingCount: number;
+      firstSeenIndex: number;
+    }>();
+
+    tours.forEach((tour: any, index: number) => {
+      const destinationName = String(tour.destination || '').trim();
+      if (!destinationName) return;
+
+      const key = destinationName.toLowerCase();
+      const image = Array.isArray(tour.images) && tour.images[0] ? String(tour.images[0]) : '';
+      const tagline = String(tour.description || '').slice(0, 140);
+      const bookingCount = Array.isArray(tour.Bookings) ? tour.Bookings.length : 0;
+
+      const current = grouped.get(key);
+      if (!current) {
+        grouped.set(key, {
+          key,
+          name: destinationName,
+          image,
+          tagline,
+          tourCount: 1,
+          bookingCount,
+          firstSeenIndex: index,
+        });
+        return;
+      }
+
+      grouped.set(key, {
+        ...current,
+        tourCount: current.tourCount + 1,
+        bookingCount: current.bookingCount + bookingCount,
+      });
+    });
+
+    const destinations = [...grouped.values()];
+
+    const allCountsZero = destinations.every((item) => item.tourCount === 0 && item.bookingCount === 0);
+
+    const ranked = allCountsZero
+      ? destinations.sort((a, b) => a.firstSeenIndex - b.firstSeenIndex)
+      : destinations.sort((a, b) => {
+          if (b.bookingCount !== a.bookingCount) return b.bookingCount - a.bookingCount;
+          if (b.tourCount !== a.tourCount) return b.tourCount - a.tourCount;
+          return a.firstSeenIndex - b.firstSeenIndex;
+        });
+
+    return res.json({
+      destinations: ranked.slice(0, effectiveLimit).map((item) => ({
+        id: item.key,
+        name: item.name,
+        country: 'Kenya',
+        image: item.image,
+        tagline: item.tagline,
+        tourCount: item.tourCount,
+        bookingCount: item.bookingCount,
+      })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
 
 async function listTours(
   req: RequestWithValidated<ListToursInput['body'], ListToursInput['params'], ListToursInput['query']> & RequestWithUser,
@@ -232,7 +328,9 @@ module.exports = {
   updateTourSchema,
   idSchema,
   listToursSchema,
+  listTopDestinationsSchema,
   listTours,
+  listTopDestinations,
   getTourById,
   createTour,
   updateTour,
