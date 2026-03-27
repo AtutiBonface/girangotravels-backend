@@ -98,7 +98,7 @@ async function sendViaSendGrid(params: {
       personalizations: [personalizations],
       from: {
         email: getFromEmail(),
-        name: 'Girango Travels',
+        name: 'Girango tour & travel safaris',
       },
       subject,
       content,
