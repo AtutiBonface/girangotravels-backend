@@ -144,6 +144,7 @@ interface NewBookingNotificationPayload {
   customerPhone?: string | null;
   reservationCode: string;
   tourTitle: string;
+  tourImageUrl?: string;
   totalAmount?: string | number;
   currency?: string;
   travelDate?: string;
@@ -154,6 +155,7 @@ interface PaymentSuccessNotificationPayload {
   customerEmail?: string | null;
   customerPhone?: string | null;
   tourTitle: string;
+  tourImageUrl?: string;
   amount: number | string;
   currency: string;
 }
@@ -163,6 +165,7 @@ interface BookingStatusChangedNotificationPayload {
   customerEmail?: string | null;
   reservationCode: string;
   tourTitle: string;
+  tourImageUrl?: string;
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'resolved';
   travelDate?: string;
 }
@@ -172,6 +175,7 @@ interface PaymentPendingNotificationPayload {
   customerPhone?: string | null;
   reservationCode: string;
   tourTitle: string;
+  tourImageUrl?: string;
   totalAmount: string | number;
   currency: string;
   daysSinceBooking: number;
@@ -203,11 +207,81 @@ function getLogoUrl() {
   return `${normalizeAppUrl()}/logo.png`;
 }
 
+const emailDateFormatter = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+});
+
+const whatsappDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+function formatDisplayDate(value?: string | Date | null) {
+  if (!value) return 'N/A';
+
+  const rawValue = value instanceof Date ? value.toISOString() : String(value).trim();
+  if (!rawValue) return 'N/A';
+
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(rawValue)
+    ? new Date(`${rawValue}T00:00:00`)
+    : new Date(rawValue);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return rawValue;
+  }
+
+  return emailDateFormatter.format(parsedDate);
+}
+
+function formatStatusLabel(status: string) {
+  if (!status) return 'Unknown';
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+}
+
+function formatEventDateTime(value?: Date | string) {
+  const parsed = value ? new Date(value) : new Date();
+  if (Number.isNaN(parsed.getTime())) {
+    return whatsappDateTimeFormatter.format(new Date());
+  }
+  return whatsappDateTimeFormatter.format(parsed);
+}
+
+function buildWhatsappMessage(options: {
+  title: string;
+  points: string[];
+  quickLinks?: Array<{ label: string; url: string }>;
+  eventTime?: Date | string;
+}) {
+  const { title, points, quickLinks, eventTime } = options;
+  const lines = [`*${title}*`, ''];
+
+  points.forEach((point, index) => {
+    lines.push(`${index + 1}. ${point}`);
+  });
+
+  if (quickLinks && quickLinks.length > 0) {
+    lines.push('', '*Quick shortcuts:*');
+    quickLinks.forEach((link, index) => {
+      lines.push(`${index + 1}. ${link.label}: ${link.url}`);
+    });
+  }
+
+  lines.push('', `_Event time: ${formatEventDateTime(eventTime)}_`);
+  return lines.join('\n');
+}
+
 function renderEmailTemplate(options: {
   preheader?: string;
   heading: string;
   intro?: string;
   contentHtml: string;
+  heroImageUrl?: string;
+  heroKicker?: string;
   ctaLabel?: string;
   ctaUrl?: string;
   footerNote?: string;
@@ -217,6 +291,8 @@ function renderEmailTemplate(options: {
     heading,
     intro,
     contentHtml,
+    heroImageUrl,
+    heroKicker,
     ctaLabel,
     ctaUrl,
     footerNote,
@@ -224,6 +300,11 @@ function renderEmailTemplate(options: {
 
   const logoUrl = getLogoUrl();
   const showCta = Boolean(ctaLabel && ctaUrl);
+  const hasHeroImage = Boolean(heroImageUrl?.trim());
+  const resolvedHeroKicker = heroKicker || 'Girango Travels';
+  const heroStyle = hasHeroImage
+    ? `background-image: linear-gradient(90deg, rgba(30,61,46,0.92) 0%, rgba(30,61,46,0.56) 52%, rgba(30,61,46,0.30) 100%), url('${heroImageUrl}'); background-size: cover; background-position: center;`
+    : 'background: #1e3d2e;';
 
   return `
     <!doctype html>
@@ -233,22 +314,27 @@ function renderEmailTemplate(options: {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${heading}</title>
         <style>
-          body { margin: 0; padding: 0; background: #f9f6ef; color: #1f2937; font-family: Arial, Helvetica, sans-serif; }
-          .wrapper { width: 100%; background: #f9f6ef; padding: 28px 12px; }
-          .card { max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #efe8d8; border-radius: 16px; overflow: hidden; }
-          .header { padding: 22px 24px; background: linear-gradient(135deg, #0f766e 0%, #d4af37 100%); }
-          .brand { display: flex; align-items: center; gap: 12px; color: #ffffff; }
-          .brand img { width: 44px; height: 44px; border-radius: 9999px; background: #fff; object-fit: contain; }
-          .brand h1 { margin: 0; font-size: 18px; line-height: 1.2; font-weight: 700; }
+          body { margin: 0; padding: 0; background: #F5EFE6; color: #1a1100; font-family: Arial, Helvetica, sans-serif; }
+          .wrapper { width: 100%; background: #F5EFE6; padding: 30px 12px; }
+          .card { max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 26px rgba(30, 31, 24, 0.10); }
+          .header { padding: 18px 24px; background: #ffffff; border-bottom: 1px solid #EFE6D9; }
+          .brand { display: flex; align-items: center; gap: 12px; color: #1e3d2e; }
+          .brand img { width: 44px; height: 44px; border-radius: 9999px; background: #ffffff; object-fit: contain; }
+          .brand h1 { margin: 0; font-size: 18px; line-height: 1.2; font-weight: 700; letter-spacing: 0.2px; }
+          .hero { padding: 26px 24px 28px; color: #ffffff; ${heroStyle} }
+          .hero-kicker { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: #F6E8BF; font-weight: 700; }
+          .hero h2 { margin: 0; font-size: 28px; line-height: 1.2; color: #ffffff; }
           .content { padding: 24px; }
-          .content h2 { margin: 0 0 10px; font-size: 20px; line-height: 1.3; color: #0f172a; }
-          .content p { margin: 0 0 12px; line-height: 1.6; color: #475569; }
-          .panel { margin: 16px 0; padding: 14px 16px; border-radius: 12px; border: 1px solid #efe8d8; background: #fcfaf4; }
-          .panel p { margin: 0 0 8px; }
+          .content p { margin: 0 0 12px; line-height: 1.7; color: #6B5E4A; font-size: 15px; }
+          .content strong { color: #2D1F0A; }
+          .panel { margin: 18px -24px 0; padding: 20px 24px; border-radius: 0; border: none; background: #1e3d2e; }
+          .panel p { margin: 0 0 12px; color: #E8EFEA; }
           .panel p:last-child { margin-bottom: 0; }
+          .panel strong { color: #F6E8BF; }
+          .status-pill { display: inline-block; padding: 4px 10px; border-radius: 9999px; background: #EAF3ED; color: #1e3d2e; border: 1px solid #CFE1D5; font-size: 12px; font-weight: 700; letter-spacing: 0.2px; }
           .cta-wrap { margin-top: 18px; }
-          .cta { display: inline-block; text-decoration: none; background: #d4af37; color: #ffffff !important; padding: 11px 16px; border-radius: 10px; font-weight: 700; }
-          .footer { padding: 16px 24px 22px; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; }
+          .cta { display: inline-block; text-decoration: none; background: #C8962E; color: #ffffff !important; padding: 12px 20px; border-radius: 9999px; font-size: 14px; font-weight: 700; letter-spacing: 0.2px; }
+          .footer { padding: 16px 24px 22px; font-size: 12px; line-height: 1.5; color: #6B5E4A; border-top: 1px solid #E5DDD0; background: #ffffff; }
           .preheader { display: none !important; visibility: hidden; opacity: 0; color: transparent; height: 0; width: 0; overflow: hidden; }
         </style>
       </head>
@@ -262,8 +348,11 @@ function renderEmailTemplate(options: {
                 <h1>Girango Travels</h1>
               </div>
             </div>
-            <div class="content">
+            <div class="hero">
+              <p class="hero-kicker">${resolvedHeroKicker}</p>
               <h2>${heading}</h2>
+            </div>
+            <div class="content">
               ${intro ? `<p>${intro}</p>` : ''}
               <div class="panel">
                 ${contentHtml}
@@ -431,6 +520,7 @@ async function notifyNewBooking({
   customerPhone,
   reservationCode,
   tourTitle,
+  tourImageUrl,
   totalAmount,
   currency,
   travelDate,
@@ -440,15 +530,14 @@ async function notifyNewBooking({
   const customerEmailHtml = renderEmailTemplate({
     preheader: `Booking received: ${reservationCode}`,
     heading: 'Booking Received',
-    intro: `Hello ${customerName}, your booking has been received successfully.`,
+    intro: `Hello ${customerName}, thanks for choosing Girango Travels — your adventure is now in motion.`,
     contentHtml: `
-      <p><strong>Reservation Code:</strong> ${reservationCode}</p>
-      <p><strong>Tour:</strong> ${tourTitle}</p>
-      <p><strong>Travel Date:</strong> ${travelDate || 'N/A'}</p>
-      <p><strong>Number of Travelers:</strong> ${travelers || 'N/A'}</p>
-      <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
-      <p>Our team will review and follow up with you shortly.</p>
+      <p>We have safely received your booking for <strong>${tourTitle}</strong> with reservation code <strong>${reservationCode}</strong>.</p>
+      <p>Your planned travel date is <strong>${formatDisplayDate(travelDate)}</strong> for <strong>${travelers || 'N/A'}</strong> traveler(s), and the current package total is <strong>${totalAmount} ${currency}</strong>.</p>
+      <p>Our travel consultant is now reviewing the details and will contact you shortly with the next simple steps.</p>
     `,
+    heroImageUrl: tourImageUrl,
+    heroKicker: 'Booking Update',
   });
   
   // Get admin notification config
@@ -459,17 +548,14 @@ async function notifyNewBooking({
     const adminEmailHtml = renderEmailTemplate({
       preheader: `New booking ${reservationCode}`,
       heading: 'New Booking Received',
-      intro: 'A new booking has been submitted and needs review.',
+      intro: 'A customer has submitted a new booking and is waiting for confirmation.',
       contentHtml: `
-        <p><strong>Reservation Code:</strong> ${reservationCode}</p>
-        <p><strong>Customer:</strong> ${customerName}</p>
-        <p><strong>Customer Phone:</strong> ${customerPhone || 'N/A'}</p>
-        <p><strong>Tour:</strong> ${tourTitle}</p>
-        <p><strong>Travel Date:</strong> ${travelDate || 'N/A'}</p>
-        <p><strong>Number of Travelers:</strong> ${travelers || 'N/A'}</p>
-        <p><strong>Total Amount:</strong> ${totalAmount} ${currency}</p>
-        <p><strong>Status:</strong> Pending Confirmation</p>
+        <p><strong>${customerName}</strong> has requested <strong>${tourTitle}</strong> under reservation code <strong>${reservationCode}</strong>.</p>
+        <p>The guest intends to travel on <strong>${formatDisplayDate(travelDate)}</strong>, for <strong>${travelers || 'N/A'}</strong> traveler(s), with a quoted total of <strong>${totalAmount} ${currency}</strong>.</p>
+        <p>Contact number on file is <strong>${customerPhone || 'N/A'}</strong>, and the booking is currently <span class="status-pill">Pending</span>.</p>
       `,
+      heroImageUrl: tourImageUrl,
+      heroKicker: 'Admin Alert',
       ctaLabel: 'Open Booking in Dashboard',
       ctaUrl: bookingUrl,
     });
@@ -485,7 +571,18 @@ async function notifyNewBooking({
 
   // Admin SMS/WhatsApp notifications
   if (config && config.enableWhatsapp && config.recipientPhones.length > 0) {
-    const adminSmsMessage = `New booking: ${reservationCode}. Customer: ${customerName}. Tour: ${tourTitle}. Amount: ${totalAmount} ${currency}. View in dashboard.`;
+    const adminSmsMessage = buildWhatsappMessage({
+      title: 'New Booking Request Received',
+      points: [
+        `Reservation ${reservationCode} was submitted by ${customerName}.`,
+        `Tour selected: ${tourTitle}.`,
+        `Travel date: ${formatDisplayDate(travelDate)} for ${travelers || 'N/A'} traveler(s).`,
+        `Quoted amount: ${totalAmount} ${currency}.`,
+      ],
+      quickLinks: [
+        { label: 'Open bookings dashboard', url: bookingUrl },
+      ],
+    });
     
     for (const phone of config.recipientPhones) {
       if (config.enableWhatsapp) {
@@ -504,6 +601,7 @@ async function notifyPaymentPending({
   customerPhone,
   reservationCode,
   tourTitle,
+  tourImageUrl,
   totalAmount,
   currency,
   daysSinceBooking,
@@ -519,16 +617,14 @@ async function notifyPaymentPending({
     const adminEmailHtml = renderEmailTemplate({
       preheader: `Payment pending ${reservationCode}`,
       heading: 'Payment Pending for Booking',
-      intro: 'A booking has not been fully paid and may require follow-up.',
+      intro: 'A booking needs payment follow-up from the team.',
       contentHtml: `
-        <p><strong>Reservation Code:</strong> ${reservationCode}</p>
-        <p><strong>Customer:</strong> ${customerName}</p>
-        <p><strong>Customer Phone:</strong> ${customerPhone || 'N/A'}</p>
-        <p><strong>Tour:</strong> ${tourTitle}</p>
-        <p><strong>Outstanding Amount:</strong> ${totalAmount} ${currency}</p>
-        <p><strong>Days Since Booking:</strong> ${daysSinceBooking}</p>
-        <p><strong>Action Required:</strong> Follow up with customer for payment confirmation.</p>
+        <p>Reservation <strong>${reservationCode}</strong> for <strong>${tourTitle}</strong> is still awaiting full payment.</p>
+        <p>The customer is <strong>${customerName}</strong> (${customerPhone || 'N/A'}), with an outstanding amount of <strong>${totalAmount} ${currency}</strong> after <strong>${daysSinceBooking}</strong> day(s) since booking.</p>
+        <p>Please follow up with the guest to confirm payment and keep the booking moving smoothly.</p>
       `,
+      heroImageUrl: tourImageUrl,
+      heroKicker: 'Payment Alert',
       ctaLabel: 'View Booking',
       ctaUrl: bookingUrl,
     });
@@ -544,7 +640,19 @@ async function notifyPaymentPending({
 
   // Admin SMS/WhatsApp notifications
   if (config.enableWhatsapp && config.recipientPhones.length > 0) {
-    const adminSmsMessage = `Payment pending: ${reservationCode}. Customer: ${customerName}. Amount: ${totalAmount} ${currency}. Days since booking: ${daysSinceBooking}.`;
+    const bookingUrl = `${normalizeAppUrl()}/dashboard/bookings`;
+    const adminSmsMessage = buildWhatsappMessage({
+      title: 'Payment Follow-up Needed',
+      points: [
+        `Reservation ${reservationCode} is still pending payment.`,
+        `Customer: ${customerName} (${customerPhone || 'N/A'}).`,
+        `Outstanding amount: ${totalAmount} ${currency}.`,
+        `Days since booking: ${daysSinceBooking}.`,
+      ],
+      quickLinks: [
+        { label: 'Open booking for follow-up', url: bookingUrl },
+      ],
+    });
     
     for (const phone of config.recipientPhones) {
       if (config.enableWhatsapp) {
@@ -558,6 +666,7 @@ async function notifyPaymentSuccess({
   customerEmail,
   customerPhone,
   tourTitle,
+  tourImageUrl,
   amount,
   currency,
 }: PaymentSuccessNotificationPayload) {
@@ -570,12 +679,13 @@ async function notifyPaymentSuccess({
   const customerEmailHtml = renderEmailTemplate({
     preheader: `Payment received for ${tourTitle}`,
     heading: 'Payment Received Successfully',
-    intro: 'Thank you! Your payment has been received.',
+    intro: 'Great choice — your payment has been received and your trip is now secured.',
     contentHtml: `
-      <p><strong>Tour:</strong> ${tourTitle}</p>
-      <p><strong>Amount:</strong> ${amount} ${currency}</p>
-      <p>Your reservation is now secured and our team will keep you updated.</p>
+      <p>We have successfully received <strong>${amount} ${currency}</strong> for your <strong>${tourTitle}</strong> booking.</p>
+      <p>Your reservation is protected, and our team will keep sharing the important trip details as your departure date approaches.</p>
     `,
+    heroImageUrl: tourImageUrl,
+    heroKicker: 'Payment Confirmation',
   });
 
   await sendEmail(customerEmail, 'Payment Successful', customerEmailHtml);
@@ -586,6 +696,7 @@ async function notifyBookingStatusChanged({
   customerEmail,
   reservationCode,
   tourTitle,
+  tourImageUrl,
   status,
   travelDate,
 }: BookingStatusChangedNotificationPayload) {
@@ -614,15 +725,15 @@ async function notifyBookingStatusChanged({
     },
     confirmed: {
       heading: 'Booking Confirmed',
-      intro: 'Great news! Your booking has been confirmed.',
+      intro: 'Excellent news  your safari is officially confirmed and we are excited to host you.',
     },
     cancelled: {
       heading: 'Booking Cancelled',
-      intro: 'Your booking has been cancelled. If this is unexpected, please contact us immediately.',
+      intro: 'Your booking has been cancelled. If this was not intentional, our team can assist you right away.',
     },
     completed: {
       heading: 'Booking Completed',
-      intro: 'Your trip has been marked as completed. Thank you for choosing Girango Travels.',
+      intro: 'Congratulations on completing your trip with us — we hope it was unforgettable from start to finish.',
     },
     resolved: {
       heading: 'Booking Resolved',
@@ -636,11 +747,11 @@ async function notifyBookingStatusChanged({
     heading: template.heading,
     intro: `Hello ${customerName}, ${template.intro}`,
     contentHtml: `
-      <p><strong>Reservation Code:</strong> ${reservationCode}</p>
-      <p><strong>Tour:</strong> ${tourTitle}</p>
-      <p><strong>Travel Date:</strong> ${travelDate || 'N/A'}</p>
-      <p><strong>Current Status:</strong> ${status}</p>
+      <p>Your booking <strong>${reservationCode}</strong> for <strong>${tourTitle}</strong> is now <span class="status-pill">${formatStatusLabel(status)}</span>.</p>
+      <p>Your travel date remains <strong>${formatDisplayDate(travelDate)}</strong>, and our team is on standby to guide you through any next step you need.</p>
     `,
+    heroImageUrl: tourImageUrl,
+    heroKicker: 'Booking Status',
   });
 
   const result = await sendEmail(
@@ -671,6 +782,7 @@ interface ReviewInvitationNotificationPayload {
   customerEmail?: string | null;
   reservationCode: string;
   tourTitle: string;
+  tourImageUrl?: string;
   reviewUrl: string;
 }
 
@@ -679,6 +791,7 @@ async function notifyReviewInvitation({
   customerEmail,
   reservationCode,
   tourTitle,
+  tourImageUrl,
   reviewUrl,
 }: ReviewInvitationNotificationPayload) {
   if (!customerEmail?.trim()) {
@@ -694,11 +807,12 @@ async function notifyReviewInvitation({
     heading: 'How was your trip?',
     intro: `Hello ${customerName}, thank you for traveling with Girango Travels.`,
     contentHtml: `
-      <p><strong>Reservation Code:</strong> ${reservationCode}</p>
-      <p><strong>Tour:</strong> ${tourTitle}</p>
-      <p>We would love your feedback. Your review helps other travelers and helps us improve.</p>
-      <p>This review link is unique to your completed trip.</p>
+      <p>We would love to hear how your <strong>${tourTitle}</strong> experience went under booking <strong>${reservationCode}</strong>.</p>
+      <p>Your feedback helps future travelers book with confidence and helps us keep improving every journey we create.</p>
+      <p>This review link is personal to your completed trip and only takes a minute to complete.</p>
     `,
+    heroImageUrl: tourImageUrl,
+    heroKicker: 'Share Your Experience',
     ctaLabel: 'Leave a Review',
     ctaUrl: reviewUrl,
   });
@@ -715,7 +829,19 @@ async function notifyReviewInvitation({
 }
 
 async function sendAdminReplyNotification({ name, phone, email, replyMessage }: AdminReplyNotificationPayload) {
-  const smsmessage = `Hello ${name}, the Girango Travels team has replied to your enquiry: "${replyMessage}"`;
+  const contactUrl = `${normalizeAppUrl()}/contact`;
+  const smsmessage = buildWhatsappMessage({
+    title: `Hello ${name}, your Girango Travels update`,
+    points: [
+      'Our support team has replied to your enquiry.',
+      `Response: "${replyMessage}"`,
+      'If you need anything else, reply to this message and we will assist quickly.',
+    ],
+    quickLinks: [
+      { label: 'Contact us', url: contactUrl },
+      { label: 'Browse tours', url: `${normalizeAppUrl()}/tours` },
+    ],
+  });
 
   // Send to customer via SMS/WhatsApp if phone available
   if (phone) {
@@ -729,13 +855,17 @@ async function sendAdminReplyNotification({ name, phone, email, replyMessage }: 
   // Get contact notification config for admin notifications
   const config = await getNotificationConfig('contact');
   if (config && config.enableEmail && email) {
-    const adminEmailHtml = `
-      <h2>Admin Reply Sent to Contact</h2>
-      <p><strong>Customer:</strong> ${name}</p>
-      <p><strong>Customer Email:</strong> ${email}</p>
-      <p><strong>Reply Message:</strong></p>
-      <p>${replyMessage.replace(/\n/g, '<br>')}</p>
-    `;
+    const adminEmailHtml = renderEmailTemplate({
+      preheader: `Reply sent to ${name}`,
+      heading: 'Reply Delivered to Customer',
+      intro: `Your team message has been sent successfully to ${name}.`,
+      contentHtml: `
+        <p>The customer <strong>${name}</strong> (${email}) has now received your response.</p>
+        <p>Your message was:</p>
+        <p>${replyMessage.replace(/\n/g, '<br>')}</p>
+      `,
+      heroKicker: 'Contact Support',
+    });
     
     await sendEmail(
       config.recipientEmails,
@@ -759,14 +889,14 @@ async function notifyContactSubmitted(contact: any) {
     const adminEmailHtml = renderEmailTemplate({
       preheader: `New contact from ${contact.name}`,
       heading: 'New Contact Message',
-      intro: 'A new message has arrived from the contact form.',
+      intro: 'A new customer enquiry has arrived from your website.',
       contentHtml: `
-        <p><strong>Name:</strong> ${contact.name}</p>
-        <p><strong>Email:</strong> ${contact.email}</p>
-        <p><strong>Phone:</strong> ${contact.phone || 'Not provided'}</p>
-        <p><strong>Message:</strong></p>
+        <p><strong>${contact.name}</strong> has reached out and is waiting for your response.</p>
+        <p>You can reach them at <strong>${contact.email}</strong>${contact.phone ? ` or <strong>${contact.phone}</strong>` : ''}.</p>
+        <p>Message received:</p>
         <p>${contact.message.replace(/\n/g, '<br>')}</p>
       `,
+      heroKicker: 'Customer Enquiry',
       ctaLabel: 'Open Contact in Dashboard',
       ctaUrl: contactUrl,
     });
@@ -782,7 +912,18 @@ async function notifyContactSubmitted(contact: any) {
 
   // Admin SMS/WhatsApp notifications
   if (config.enableWhatsapp && config.recipientPhones.length > 0) {
-    const adminSmsMessage = `New contact: ${contact.name}. Email: ${contact.email}. Message: ${contact.message.substring(0, 80)}...`;
+    const contactUrl = `${normalizeAppUrl()}/dashboard/contacts`;
+    const adminSmsMessage = buildWhatsappMessage({
+      title: 'New Website Enquiry',
+      points: [
+        `${contact.name} sent a new contact request.`,
+        `Email: ${contact.email}${contact.phone ? ` | Phone: ${contact.phone}` : ''}.`,
+        `Message preview: ${contact.message.substring(0, 120)}${contact.message.length > 120 ? '...' : ''}`,
+      ],
+      quickLinks: [
+        { label: 'Open contacts dashboard', url: contactUrl },
+      ],
+    });
     
     for (const phone of config.recipientPhones) {
       if (config.enableWhatsapp) {
