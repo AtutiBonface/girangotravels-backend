@@ -128,7 +128,7 @@ async function sendViaSmtp(params: {
   }
 
   await transporter.sendMail({
-    from: `"Girango Travels" <${getFromEmail()}>`,
+    from: `"Girango tour & travel safaris" <${getFromEmail()}>`,
     to: to.join(','),
     cc: cc?.join(','),
     bcc: bcc?.join(','),
@@ -301,7 +301,7 @@ function renderEmailTemplate(options: {
   const logoUrl = getLogoUrl();
   const showCta = Boolean(ctaLabel && ctaUrl);
   const hasHeroImage = Boolean(heroImageUrl?.trim());
-  const resolvedHeroKicker = heroKicker || 'Girango Travels';
+  const resolvedHeroKicker = heroKicker || 'Girango tour & travel safaris';
   const heroStyle = hasHeroImage
     ? `background-image: linear-gradient(90deg, rgba(30,61,46,0.92) 0%, rgba(30,61,46,0.56) 52%, rgba(30,61,46,0.30) 100%), url('${heroImageUrl}'); background-size: cover; background-position: center;`
     : 'background: #1e3d2e;';
@@ -314,27 +314,31 @@ function renderEmailTemplate(options: {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${heading}</title>
         <style>
-          body { margin: 0; padding: 0; background: #F5EFE6; color: #1a1100; font-family: Arial, Helvetica, sans-serif; }
-          .wrapper { width: 100%; background: #F5EFE6; padding: 30px 12px; }
-          .card { max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 26px rgba(30, 31, 24, 0.10); }
-          .header { padding: 18px 24px; background: #ffffff; border-bottom: 1px solid #EFE6D9; }
+          body { margin: 0; padding: 0; background: #F5EFE6; color: #1a1100; font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+          .wrapper { width: 100%; background: #F5EFE6; padding: 26px 12px; }
+          .card { max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 22px rgba(30, 31, 24, 0.09); }
+          .header { padding: 16px 22px; background: #ffffff; border-bottom: 1px solid #EFE6D9; }
           .brand { display: flex; align-items: center; gap: 12px; color: #1e3d2e; }
-          .brand img { width: 44px; height: 44px; border-radius: 9999px; background: #ffffff; object-fit: contain; }
-          .brand h1 { margin: 0; font-size: 18px; line-height: 1.2; font-weight: 700; letter-spacing: 0.2px; }
-          .hero { padding: 26px 24px 28px; color: #ffffff; ${heroStyle} }
-          .hero-kicker { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: #F6E8BF; font-weight: 700; }
-          .hero h2 { margin: 0; font-size: 28px; line-height: 1.2; color: #ffffff; }
-          .content { padding: 24px; }
-          .content p { margin: 0 0 12px; line-height: 1.7; color: #6B5E4A; font-size: 15px; }
+          .brand img { width: 40px; height: 40px; border-radius: 9999px; background: #ffffff; object-fit: contain; }
+          .brand h1 { margin: 0; font-size: 15px; line-height: 1.3; font-weight: 700; letter-spacing: 0.1px; }
+          .hero { padding: 22px 22px 24px; color: #ffffff; ${heroStyle} }
+          .hero-kicker { margin: 0 0 7px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #F6E8BF; font-weight: 700; }
+          .hero h2 { margin: 0; font-size: 25px; line-height: 1.28; color: #ffffff; font-weight: 700; }
+          .content { padding: 22px; }
+          .content p { margin: 0 0 12px; line-height: 1.62; color: #6B5E4A; font-size: 14px; }
+          .content > p:first-child { color: #4D3F2F; font-size: 15px; line-height: 1.6; margin-bottom: 14px; }
           .content strong { color: #2D1F0A; }
-          .panel { margin: 18px -24px 0; padding: 20px 24px; border-radius: 0; border: none; background: #1e3d2e; }
-          .panel p { margin: 0 0 12px; color: #E8EFEA; }
+          .panel { margin: 2px -22px 0; padding: 18px 22px; border-radius: 0; border: none; background: #1e3d2e; }
+          .panel p { margin: 0 0 11px; color: #E8EFEA; font-size: 14px; line-height: 1.58; }
           .panel p:last-child { margin-bottom: 0; }
           .panel strong { color: #F6E8BF; }
-          .status-pill { display: inline-block; padding: 4px 10px; border-radius: 9999px; background: #EAF3ED; color: #1e3d2e; border: 1px solid #CFE1D5; font-size: 12px; font-weight: 700; letter-spacing: 0.2px; }
-          .cta-wrap { margin-top: 18px; }
-          .cta { display: inline-block; text-decoration: none; background: #C8962E; color: #ffffff !important; padding: 12px 20px; border-radius: 9999px; font-size: 14px; font-weight: 700; letter-spacing: 0.2px; }
-          .footer { padding: 16px 24px 22px; font-size: 12px; line-height: 1.5; color: #6B5E4A; border-top: 1px solid #E5DDD0; background: #ffffff; }
+          .panel .meta-note { margin-top: 12px; font-size: 11px; line-height: 1.45; color: #C8D5CC; }
+          .cta-wrap { margin-top: 16px; }
+          .cta { display: inline-block; text-decoration: none; background: #C8962E; color: #ffffff !important; padding: 11px 20px; border-radius: 9999px; font-size: 13px; font-weight: 700; letter-spacing: 0.2px; }
+          .footer { padding: 15px 22px 20px; font-size: 11px; line-height: 1.55; color: #6B5E4A; border-top: 1px solid #E5DDD0; background: #ffffff; }
+          .footer-links { margin-top: 7px; }
+          .footer-links a { color: #1e3d2e; text-decoration: none; font-weight: 600; font-size: 11px; }
+          .footer-links .sep { color: #A89A86; margin: 0 6px; }
           .preheader { display: none !important; visibility: hidden; opacity: 0; color: transparent; height: 0; width: 0; overflow: hidden; }
         </style>
       </head>
@@ -344,8 +348,8 @@ function renderEmailTemplate(options: {
           <div class="card">
             <div class="header">
               <div class="brand">
-                <img src="${logoUrl}" alt="Girango Travels" />
-                <h1>Girango Travels</h1>
+                <img src="${logoUrl}" alt="Girango tour & travel safaris" />
+                <h1>Girango tour & travel safaris</h1>
               </div>
             </div>
             <div class="hero">
@@ -360,7 +364,14 @@ function renderEmailTemplate(options: {
               ${showCta ? `<div class="cta-wrap"><a class="cta" href="${ctaUrl}">${ctaLabel}</a></div>` : ''}
             </div>
             <div class="footer">
-              ${footerNote || 'This email was sent by Girango Travels. If you need help, reply to this message.'}
+              ${footerNote || 'This email was sent by Girango tour & travel safaris. If you need help, reply to this message.'}
+              <div class="footer-links">
+                <a href="https://www.facebook.com/share/18Y3NQLojg/">Facebook</a>
+                <span class="sep">•</span>
+                <a href="https://www.instagram.com/girango_tours?igsh=MWJ4eTExdXBzcTIzaA==">Instagram</a>
+                <span class="sep">•</span>
+                <a href="https://www.tiktok.com/@girago_tours?_r=1&_t=ZS-9525jJKl9uu">TikTok</a>
+              </div>
             </div>
           </div>
         </div>
@@ -530,11 +541,12 @@ async function notifyNewBooking({
   const customerEmailHtml = renderEmailTemplate({
     preheader: `Booking received: ${reservationCode}`,
     heading: 'Booking Received',
-    intro: `Hello ${customerName}, thanks for choosing Girango Travels — your adventure is now in motion.`,
+    intro: `Hello ${customerName}, thanks for choosing Girango tour & travel safaris — your adventure is now in motion.`,
     contentHtml: `
-      <p>We have safely received your booking for <strong>${tourTitle}</strong> with reservation code <strong>${reservationCode}</strong>.</p>
+      <p>Great choice — we have safely received your booking for <strong>${tourTitle}</strong>.</p>
       <p>Your planned travel date is <strong>${formatDisplayDate(travelDate)}</strong> for <strong>${travelers || 'N/A'}</strong> traveler(s), and the current package total is <strong>${totalAmount} ${currency}</strong>.</p>
       <p>Our travel consultant is now reviewing the details and will contact you shortly with the next simple steps.</p>
+      <p class="meta-note">Booking reference: ${reservationCode}</p>
     `,
     heroImageUrl: tourImageUrl,
     heroKicker: 'Booking Update',
@@ -552,7 +564,7 @@ async function notifyNewBooking({
       contentHtml: `
         <p><strong>${customerName}</strong> has requested <strong>${tourTitle}</strong> under reservation code <strong>${reservationCode}</strong>.</p>
         <p>The guest intends to travel on <strong>${formatDisplayDate(travelDate)}</strong>, for <strong>${travelers || 'N/A'}</strong> traveler(s), with a quoted total of <strong>${totalAmount} ${currency}</strong>.</p>
-        <p>Contact number on file is <strong>${customerPhone || 'N/A'}</strong>, and the booking is currently <span class="status-pill">Pending</span>.</p>
+        <p>Contact number on file is <strong>${customerPhone || 'N/A'}</strong>, and the booking is currently <strong>Pending</strong>.</p>
       `,
       heroImageUrl: tourImageUrl,
       heroKicker: 'Admin Alert',
@@ -592,7 +604,7 @@ async function notifyNewBooking({
   }
 
   if (customerEmail) {
-    await sendEmail(customerEmail, `Booking Received: ${reservationCode}`, customerEmailHtml);
+    await sendEmail(customerEmail, 'Booking Received', customerEmailHtml);
   }
 }
 
@@ -729,7 +741,7 @@ async function notifyBookingStatusChanged({
     },
     cancelled: {
       heading: 'Booking Cancelled',
-      intro: 'Your booking has been cancelled. If this was not intentional, our team can assist you right away.',
+      intro: 'We are sorry — your booking could not be confirmed and has been cancelled. We are ready to help you rebook a great alternative immediately.',
     },
     completed: {
       heading: 'Booking Completed',
@@ -747,8 +759,9 @@ async function notifyBookingStatusChanged({
     heading: template.heading,
     intro: `Hello ${customerName}, ${template.intro}`,
     contentHtml: `
-      <p>Your booking <strong>${reservationCode}</strong> for <strong>${tourTitle}</strong> is now <span class="status-pill">${formatStatusLabel(status)}</span>.</p>
+      <p>Your booking for <strong>${tourTitle}</strong> is now <strong>${formatStatusLabel(status)}</strong>.</p>
       <p>Your travel date remains <strong>${formatDisplayDate(travelDate)}</strong>, and our team is on standby to guide you through any next step you need.</p>
+      <p class="meta-note">Booking reference: ${reservationCode}</p>
     `,
     heroImageUrl: tourImageUrl,
     heroKicker: 'Booking Status',
@@ -756,7 +769,7 @@ async function notifyBookingStatusChanged({
 
   const result = await sendEmail(
     customerEmail,
-    `Booking ${status.charAt(0).toUpperCase()}${status.slice(1)}: ${reservationCode}`,
+    `Booking ${status.charAt(0).toUpperCase()}${status.slice(1)} Update`,
     customerEmailHtml
   );
 
@@ -805,11 +818,12 @@ async function notifyReviewInvitation({
   const customerEmailHtml = renderEmailTemplate({
     preheader: `Share your experience for ${reservationCode}`,
     heading: 'How was your trip?',
-    intro: `Hello ${customerName}, thank you for traveling with Girango Travels.`,
+    intro: `Hello ${customerName}, thank you for traveling with Girango tour & travel safaris.`,
     contentHtml: `
-      <p>We would love to hear how your <strong>${tourTitle}</strong> experience went under booking <strong>${reservationCode}</strong>.</p>
+      <p>We would love to hear how your <strong>${tourTitle}</strong> experience went.</p>
       <p>Your feedback helps future travelers book with confidence and helps us keep improving every journey we create.</p>
       <p>This review link is personal to your completed trip and only takes a minute to complete.</p>
+      <p class="meta-note">Booking reference: ${reservationCode}</p>
     `,
     heroImageUrl: tourImageUrl,
     heroKicker: 'Share Your Experience',
@@ -817,7 +831,7 @@ async function notifyReviewInvitation({
     ctaUrl: reviewUrl,
   });
 
-  const result = await sendEmail(customerEmail, `Please review your trip: ${reservationCode}`, customerEmailHtml);
+  const result = await sendEmail(customerEmail, 'Please review your trip', customerEmailHtml);
 
   return {
     attempted: true,
@@ -831,7 +845,7 @@ async function notifyReviewInvitation({
 async function sendAdminReplyNotification({ name, phone, email, replyMessage }: AdminReplyNotificationPayload) {
   const contactUrl = `${normalizeAppUrl()}/contact`;
   const smsmessage = buildWhatsappMessage({
-    title: `Hello ${name}, your Girango Travels update`,
+    title: `Hello ${name}, your Girango tour & travel safaris update`,
     points: [
       'Our support team has replied to your enquiry.',
       `Response: "${replyMessage}"`,
