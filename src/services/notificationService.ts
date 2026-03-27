@@ -10,6 +10,7 @@ const {
   smtpPort,
   smtpUser,
   smtpPassword,
+  sendgridApiKey,
   appUrl,
 } = require('../config/env');
 
@@ -31,6 +32,110 @@ function getEmailTransporter() {
     });
   }
   return emailTransporter;
+}
+
+function hasSendgridConfig() {
+  return Boolean(sendgridApiKey);
+}
+
+function getFromEmail() {
+  if (smtpUser?.trim()) {
+    return smtpUser.trim();
+  }
+  return 'no-reply@girangotravels.com';
+}
+
+function normalizeRecipientList(values?: string[]) {
+  return (values || []).map((item) => item.trim()).filter(Boolean);
+}
+
+interface EmailSendContent {
+  html?: string;
+  text?: string;
+}
+
+interface EmailSendResult {
+  sent: boolean;
+  recipients: string[];
+  reason: 'sent' | 'no-recipients' | 'missing-content' | 'provider-not-configured' | 'send-failed';
+  provider?: 'sendgrid' | 'smtp';
+  fallbackUsed?: boolean;
+  error?: string;
+}
+
+async function sendViaSendGrid(params: {
+  to: string[];
+  subject: string;
+  html?: string;
+  text?: string;
+  cc?: string[];
+  bcc?: string[];
+}) {
+  const { to, subject, html, text, cc, bcc } = params;
+  const personalizations: any = {
+    to: to.map((email) => ({ email })),
+  };
+
+  if (cc?.length) {
+    personalizations.cc = cc.map((email) => ({ email }));
+  }
+
+  if (bcc?.length) {
+    personalizations.bcc = bcc.map((email) => ({ email }));
+  }
+
+  const content = [] as Array<{ type: string; value: string }>;
+  if (text?.trim()) {
+    content.push({ type: 'text/plain', value: text });
+  }
+  if (html?.trim()) {
+    content.push({ type: 'text/html', value: html });
+  }
+
+  await axios.post(
+    'https://api.sendgrid.com/v3/mail/send',
+    {
+      personalizations: [personalizations],
+      from: {
+        email: getFromEmail(),
+        name: 'Girango Travels',
+      },
+      subject,
+      content,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${sendgridApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 15000,
+    }
+  );
+}
+
+async function sendViaSmtp(params: {
+  to: string[];
+  subject: string;
+  html?: string;
+  text?: string;
+  cc?: string[];
+  bcc?: string[];
+}) {
+  const { to, subject, html, text, cc, bcc } = params;
+  const transporter = getEmailTransporter();
+  if (!transporter) {
+    throw new Error('SMTP transporter is not configured');
+  }
+
+  await transporter.sendMail({
+    from: `"Girango Travels" <${getFromEmail()}>`,
+    to: to.join(','),
+    cc: cc?.join(','),
+    bcc: bcc?.join(','),
+    subject,
+    html,
+    text,
+  });
 }
 
 interface NewBookingNotificationPayload {
@@ -216,37 +321,70 @@ async function getNotificationConfig(notificationType: 'booking' | 'contact' | '
 async function sendEmail(
   to: string | string[],
   subject: string,
-  html: string,
+  content: string | EmailSendContent,
   cc?: string[],
   bcc?: string[]
-) {
+) : Promise<EmailSendResult> {
   const recipients = (Array.isArray(to) ? to : [to]).map((item) => item.trim()).filter(Boolean);
   if (recipients.length === 0) {
     console.warn(`No recipient emails configured for "${subject}". Skipping email notification.`);
     return { sent: false, recipients, reason: 'no-recipients' };
   }
 
-  const transporter = getEmailTransporter();
-  if (!transporter) {
-    console.warn('Email service not configured (SMTP). Skipping email notification.');
-    return { sent: false, recipients, reason: 'smtp-not-configured' };
+  const normalizedCc = normalizeRecipientList(cc);
+  const normalizedBcc = normalizeRecipientList(bcc);
+
+  const normalizedContent = typeof content === 'string' ? { html: content } : content;
+  const html = normalizedContent?.html?.trim();
+  const text = normalizedContent?.text?.trim();
+
+  if (!html && !text) {
+    console.warn(`Missing email content for "${subject}". Skipping email notification.`);
+    return { sent: false, recipients, reason: 'missing-content' };
+  }
+
+  if (hasSendgridConfig()) {
+    try {
+      await sendViaSendGrid({
+        to: recipients,
+        subject,
+        html,
+        text,
+        cc: normalizedCc,
+        bcc: normalizedBcc,
+      });
+      console.log(`✓ Email sent via SendGrid: ${subject} to ${recipients.join(',')}`);
+      return { sent: true, recipients, reason: 'sent', provider: 'sendgrid', fallbackUsed: false };
+    } catch (error) {
+      const errMessage = error instanceof Error ? error.message : String(error);
+      console.error(`SendGrid failed for "${subject}". Falling back to SMTP:`, errMessage);
+    }
+  } else {
+    console.warn('SendGrid not configured. Falling back to SMTP.');
   }
 
   try {
-    await transporter.sendMail({
-      from: `"Girango Travels" <${smtpUser}>`,
-      to: recipients.join(','),
-      cc: cc?.join(','),
-      bcc: bcc?.join(','),
+    await sendViaSmtp({
+      to: recipients,
       subject,
       html,
+      text,
+      cc: normalizedCc,
+      bcc: normalizedBcc,
     });
-    console.log(`✓ Email sent: ${subject} to ${recipients.join(',')}`);
-    return { sent: true, recipients, reason: 'sent' };
+    console.log(`✓ Email sent via SMTP fallback: ${subject} to ${recipients.join(',')}`);
+    return { sent: true, recipients, reason: 'sent', provider: 'smtp', fallbackUsed: true };
   } catch (error) {
     const errMessage = error instanceof Error ? error.message : String(error);
-    console.error('Failed to send email:', errMessage);
-    return { sent: false, recipients, reason: 'send-failed', error: errMessage };
+    console.error('Failed to send email via fallback SMTP:', errMessage);
+    return {
+      sent: false,
+      recipients,
+      reason: hasSendgridConfig() || getEmailTransporter() ? 'send-failed' : 'provider-not-configured',
+      provider: 'smtp',
+      fallbackUsed: hasSendgridConfig(),
+      error: errMessage,
+    };
   }
 }
 

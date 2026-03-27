@@ -23,6 +23,7 @@ interface EnvConfig {
   smtpPort: number;
   smtpUser: string;
   smtpPassword: string;
+  sendgridApiKey: string;
   appUrl: string;
 }
 
@@ -78,6 +79,7 @@ const envConfig: EnvConfig = {
   smtpPort: Number(process.env.SMTP_PORT || 587),
   smtpUser: process.env.SMTP_USER || '',
   smtpPassword: process.env.SMTP_PASSWORD || '',
+  sendgridApiKey: process.env.SENDGRID_API_KEY || '',
   appUrl: process.env.APP_URL || 'http://localhost:3000',
 };
 
