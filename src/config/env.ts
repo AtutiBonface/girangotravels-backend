@@ -83,4 +83,15 @@ const envConfig: EnvConfig = {
   appUrl: process.env.APP_URL || 'http://localhost:3000',
 };
 
-module.exports = envConfig;
+// Build allowed CORS origins
+const corsOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  process.env.APP_URL?.replace(/\/+$/, '') || '',
+  process.env.PUBLIC_FRONTEND_URL?.replace(/\/+$/, '') || '',
+].filter(Boolean);
+
+module.exports = {
+  ...envConfig,
+  corsOrigins,
+};

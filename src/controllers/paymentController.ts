@@ -297,6 +297,7 @@ async function verifyPaystackTransaction(reference: string) {
       Authorization: `Bearer ${paystackSecretKey}`,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!response.ok) {
@@ -808,7 +809,15 @@ async function getPaymentStatus(
     }
 
     if (payment.provider === 'paystack' && payment.status === 'initiated' && payment.transactionRef) {
-      await synchronizePaymentWithPaystack(payment);
+      try {
+        await synchronizePaymentWithPaystack(payment);
+      } catch (error) {
+        console.warn(
+          `[payments] paystack sync skipped for status poll paymentId=${payment.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
     }
 
     return res.json({ payment });
