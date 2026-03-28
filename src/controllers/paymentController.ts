@@ -778,7 +778,22 @@ async function verifyPaystackPayment(
       throw new HttpError(403, 'Forbidden');
     }
 
-    await synchronizePaymentWithPaystack(payment);
+    if (payment.provider === 'paystack' && payment.status === 'initiated' && payment.transactionRef) {
+      try {
+        await synchronizePaymentWithPaystack(payment);
+      } catch (error) {
+        console.warn(
+          `[payments] paystack sync failed on explicit verify paymentId=${payment.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+
+        return res.json({
+          payment,
+          verificationWarning: 'Paystack verification is temporarily unavailable. Poll status again shortly.',
+        });
+      }
+    }
 
     return res.json({ payment });
   } catch (error) {
@@ -806,18 +821,6 @@ async function getPaymentStatus(
     const bookingEmail = normalizeEmail(payment.Booking.User.email);
     if (bookingEmail !== normalizeEmail(customerEmail)) {
       throw new HttpError(403, 'Forbidden');
-    }
-
-    if (payment.provider === 'paystack' && payment.status === 'initiated' && payment.transactionRef) {
-      try {
-        await synchronizePaymentWithPaystack(payment);
-      } catch (error) {
-        console.warn(
-          `[payments] paystack sync skipped for status poll paymentId=${payment.id}: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
     }
 
     return res.json({ payment });
